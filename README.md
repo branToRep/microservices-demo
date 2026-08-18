@@ -16,7 +16,7 @@ This fork will add a wishlist functionality
 languages that talk to each other over gRPC. An additional microservice, wishlist, will be added
 
 [![Architecture of
-microservices](/docs/img/architecture-diagram.png)](/docs/img/architecture-diagram.png)
+microservices](/docs/img/devOpsWL.PNG)](/docs/img/devOpsWL.PNG)
 
 Find **Protocol Buffers Descriptions** at the [`./protos` directory](/protos).
 
