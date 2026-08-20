@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package wishlist;
+
+service WishlistService {
+  // Add a product to the user's wishlist
+  rpc AddToWishlist (AddToWishlistRequest) returns (AddToWishlistResponse);
+  
+  // Get the user's entire wishlist
+  rpc GetWishlist (GetWishlistRequest) returns (GetWishlistResponse);
+  
+  // Remove a product from the wishlist
+  rpc RemoveFromWishlist (RemoveFromWishlistRequest) returns (RemoveFromWishlistResponse);
+  
+  // Add items from wishlist to the cart
+  rpc AddWishlistToCart (AddWishlistToCartRequest) returns (AddWishlistToCartResponse);
+  
+  // (Internal) Check for sales on wishlist items and trigger emails
+  rpc CheckAndNotifySales (CheckAndNotifySalesRequest) returns (CheckAndNotifySalesResponse);
+}
+
+// Define messages for each request/response here
+// PLACEHOLDER
+message AddToWishlistRequest {
+  string user_id = 1;
+  string product_id = 2;
+}
+message AddToWishlistResponse {
+  bool success = 1;
+}
