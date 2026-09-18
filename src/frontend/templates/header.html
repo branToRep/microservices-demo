@@ -88,6 +88,25 @@
                     </a>
                     {{ end }}
 
+                    {{ if $.user }}
+                    <a href="{{ $.baseUrl }}/account" class="cart-link" title="Mi cuenta">
+                        <img src="{{ $.baseUrl }}/static/icons/Hipster_ProfileIcon.svg" style="width: 22px; height: 22px;" alt="Profile icon" class="logo" />
+                    </a>
+                    <form method="POST" action="{{ $.baseUrl }}/account/logout" class="controls-form" style="display:inline;">
+                        <input type="hidden" name="csrf_token" value="{{ $.csrf_token }}">
+                        <button type="submit" class="cart-link" style="background:none;border:none;padding:0 0 0 8px;cursor:pointer;font:inherit;color:inherit;">Salir</button>
+                    </form>
+                    {{ else }}
+                    <a href="{{ $.baseUrl }}/login" class="cart-link" style="padding-left:8px;">Entrar</a>
+                    {{ end }}
+
+                    <a href="{{ $.baseUrl }}/wishlists" class="cart-link">
+                        <img src="{{ $.baseUrl }}/static/icons/Hipster_WishlistIcon.svg" style="width: 22px; height: 22px;" alt="Wishlist icon" class="logo" title="Wishlists" />
+                        {{ if $.wishlist_size }}
+                        <span class="cart-size-circle">{{ $.wishlist_size }}</span>
+                        {{ end }}
+                    </a>
+
                     <a href="{{ $.baseUrl }}/cart" class="cart-link">
                         <img src="{{ $.baseUrl }}/static/icons/Hipster_CartIcon.svg" alt="Cart icon" class="logo" title="Cart" />
                         {{ if $.cart_size }}

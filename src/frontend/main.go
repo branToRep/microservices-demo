@@ -32,7 +32,6 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 const (
@@ -55,7 +54,7 @@ var (
 		"TRY": true,
 	}
 
-	baseUrl = ""
+	baseUrl         = ""
 )
 
 type ctxKeySessionID struct{}
@@ -81,6 +80,12 @@ type frontendServer struct {
 
 	adSvcAddr string
 	adSvcConn *grpc.ClientConn
+
+	wishlistSvcAddr string
+	wishlistSvcConn *grpc.ClientConn
+
+	userSvcAddr string
+	userSvcConn *grpc.ClientConn
 
 	collectorAddr string
 	collectorConn *grpc.ClientConn
@@ -137,6 +142,8 @@ func main() {
 	mustMapEnv(&svc.shippingSvcAddr, "SHIPPING_SERVICE_ADDR")
 	mustMapEnv(&svc.adSvcAddr, "AD_SERVICE_ADDR")
 	mustMapEnv(&svc.shoppingAssistantSvcAddr, "SHOPPING_ASSISTANT_SERVICE_ADDR")
+	mapEnvWithDefault(&svc.wishlistSvcAddr, "WISHLIST_SERVICE_ADDR", "wishlistservice:8080")
+	mapEnvWithDefault(&svc.userSvcAddr, "USER_SERVICE_ADDR", "userservice:8080")
 
 	mustConnGRPC(ctx, &svc.currencySvcConn, svc.currencySvcAddr)
 	mustConnGRPC(ctx, &svc.productCatalogSvcConn, svc.productCatalogSvcAddr)
@@ -145,29 +152,52 @@ func main() {
 	mustConnGRPC(ctx, &svc.shippingSvcConn, svc.shippingSvcAddr)
 	mustConnGRPC(ctx, &svc.checkoutSvcConn, svc.checkoutSvcAddr)
 	mustConnGRPC(ctx, &svc.adSvcConn, svc.adSvcAddr)
+	mustConnGRPC(ctx, &svc.wishlistSvcConn, svc.wishlistSvcAddr)
+	mustConnGRPC(ctx, &svc.userSvcConn, svc.userSvcAddr)
+
+	wishlistSvc = newWishlistClient(svc.wishlistSvcConn)
+	userSvc = newUserClient(svc.userSvcConn)
 
 	r := mux.NewRouter()
-	r.HandleFunc(baseUrl+"/", svc.homeHandler).Methods(http.MethodGet, http.MethodHead)
-	r.HandleFunc(baseUrl+"/product/{id}", svc.productHandler).Methods(http.MethodGet, http.MethodHead)
-	r.HandleFunc(baseUrl+"/cart", svc.viewCartHandler).Methods(http.MethodGet, http.MethodHead)
-	r.HandleFunc(baseUrl+"/cart", svc.addToCartHandler).Methods(http.MethodPost)
-	r.HandleFunc(baseUrl+"/cart/empty", svc.emptyCartHandler).Methods(http.MethodPost)
-	r.HandleFunc(baseUrl+"/setCurrency", svc.setCurrencyHandler).Methods(http.MethodPost)
-	r.HandleFunc(baseUrl+"/logout", svc.logoutHandler).Methods(http.MethodGet)
-	r.HandleFunc(baseUrl+"/cart/checkout", svc.placeOrderHandler).Methods(http.MethodPost)
-	r.HandleFunc(baseUrl+"/assistant", svc.assistantHandler).Methods(http.MethodGet)
-	r.PathPrefix(baseUrl + "/static/").Handler(http.StripPrefix(baseUrl+"/static/", http.FileServer(http.Dir("./static/"))))
-	r.HandleFunc(baseUrl+"/robots.txt", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, "User-agent: *\nDisallow: /") })
-	r.HandleFunc(baseUrl+"/_healthz", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, "ok") })
-	r.HandleFunc(baseUrl+"/product-meta/{ids}", svc.getProductByID).Methods(http.MethodGet)
-	r.HandleFunc(baseUrl+"/bot", svc.chatBotHandler).Methods(http.MethodPost)
+	r.HandleFunc(baseUrl + "/", svc.homeHandler).Methods(http.MethodGet, http.MethodHead)
+	r.HandleFunc(baseUrl + "/product/{id}", svc.productHandler).Methods(http.MethodGet, http.MethodHead)
+	r.HandleFunc(baseUrl + "/cart", svc.viewCartHandler).Methods(http.MethodGet, http.MethodHead)
+	r.HandleFunc(baseUrl + "/cart", svc.addToCartHandler).Methods(http.MethodPost)
+	r.HandleFunc(baseUrl + "/cart/empty", svc.emptyCartHandler).Methods(http.MethodPost)
+	r.HandleFunc(baseUrl + "/setCurrency", svc.setCurrencyHandler).Methods(http.MethodPost)
+	r.HandleFunc(baseUrl + "/logout", svc.logoutHandler).Methods(http.MethodGet)
+	r.HandleFunc(baseUrl + "/cart/checkout", svc.placeOrderHandler).Methods(http.MethodPost)
+	r.HandleFunc(baseUrl + "/wishlists", svc.viewWishlistsHandler).Methods(http.MethodGet, http.MethodHead)
+	r.HandleFunc(baseUrl + "/wishlists", svc.createWishlistHandler).Methods(http.MethodPost)
+	r.HandleFunc(baseUrl + "/wishlist/add", svc.addToWishlistHandler).Methods(http.MethodPost)
+	r.HandleFunc(baseUrl + "/wishlist/{id}", svc.viewWishlistHandler).Methods(http.MethodGet, http.MethodHead)
+	r.HandleFunc(baseUrl + "/wishlist/{id}/rename", svc.renameWishlistHandler).Methods(http.MethodPost)
+	r.HandleFunc(baseUrl + "/wishlist/{id}/delete", svc.deleteWishlistHandler).Methods(http.MethodPost)
+	r.HandleFunc(baseUrl + "/wishlist/{id}/remove", svc.removeFromWishlistHandler).Methods(http.MethodPost)
+	r.HandleFunc(baseUrl + "/wishlist/{id}/move-to-cart", svc.moveToCartHandler).Methods(http.MethodPost)
+	r.HandleFunc(baseUrl + "/wishlist/{id}/move", svc.moveBetweenListsHandler).Methods(http.MethodPost)
+	r.HandleFunc(baseUrl + "/login", svc.viewLoginHandler).Methods(http.MethodGet, http.MethodHead)
+	r.HandleFunc(baseUrl + "/login", svc.loginHandler).Methods(http.MethodPost)
+	r.HandleFunc(baseUrl + "/register", svc.viewRegisterHandler).Methods(http.MethodGet, http.MethodHead)
+	r.HandleFunc(baseUrl + "/register", svc.registerHandler).Methods(http.MethodPost)
+	r.HandleFunc(baseUrl + "/account", svc.viewAccountHandler).Methods(http.MethodGet, http.MethodHead)
+	r.HandleFunc(baseUrl + "/account", svc.updateAccountHandler).Methods(http.MethodPost)
+	r.HandleFunc(baseUrl + "/account/password", svc.changePasswordHandler).Methods(http.MethodPost)
+	r.HandleFunc(baseUrl + "/account/logout", svc.logoutAccountHandler).Methods(http.MethodPost)
+	r.HandleFunc(baseUrl + "/assistant", svc.assistantHandler).Methods(http.MethodGet)
+	r.PathPrefix(baseUrl + "/static/").Handler(http.StripPrefix(baseUrl + "/static/", http.FileServer(http.Dir("./static/"))))
+	r.HandleFunc(baseUrl + "/robots.txt", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, "User-agent: *\nDisallow: /") })
+	r.HandleFunc(baseUrl + "/_healthz", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, "ok") })
+	r.HandleFunc(baseUrl + "/product-meta/{ids}", svc.getProductByID).Methods(http.MethodGet)
+	r.HandleFunc(baseUrl + "/bot", svc.chatBotHandler).Methods(http.MethodPost)
 
 	var handler http.Handler = r
 	handler = &logHandler{log: log, next: handler}     // add logging
+	handler = withUser(handler)                        // resolve the signed-in account, if any
 	handler = ensureSessionID(handler)                 // add session ID
 	handler = otelhttp.NewHandler(handler, "frontend") // add OTel tracing
 
-	log.Infof("starting server on %s:%s", addr, srvPort)
+	log.Infof("starting server on " + addr + ":" + srvPort)
 	log.Fatal(http.ListenAndServe(addr+":"+srvPort, handler))
 }
 func initStats(log logrus.FieldLogger) {
@@ -222,13 +252,25 @@ func mustMapEnv(target *string, envKey string) {
 	*target = v
 }
 
+// mapEnvWithDefault is the forgiving sibling of mustMapEnv: it is used for
+// services added after the original demo, so that an older manifest that does
+// not define the variable still boots.
+func mapEnvWithDefault(target *string, envKey, fallback string) {
+	v := os.Getenv(envKey)
+	if v == "" {
+		v = fallback
+	}
+	*target = v
+}
+
 func mustConnGRPC(ctx context.Context, conn **grpc.ClientConn, addr string) {
 	var err error
-	_, cancel := context.WithTimeout(ctx, time.Second*3)
+	ctx, cancel := context.WithTimeout(ctx, time.Second*3)
 	defer cancel()
-	*conn, err = grpc.NewClient(addr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
+	*conn, err = grpc.DialContext(ctx, addr,
+		grpc.WithInsecure(),
+		grpc.WithUnaryInterceptor(otelgrpc.UnaryClientInterceptor()),
+		grpc.WithStreamInterceptor(otelgrpc.StreamClientInterceptor()))
 	if err != nil {
 		panic(errors.Wrapf(err, "grpc: failed to connect %s", addr))
 	}
