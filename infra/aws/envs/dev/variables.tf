@@ -46,3 +46,15 @@ variable "numero_nodos" {
   type        = number
   default     = 2
 }
+
+variable "nodeport_frontend" {
+  description = <<-EOT
+    Puerto fijo del Service frontend-external.
+
+    TIENE que coincidir con el nodePort declarado en
+    kubernetes-manifests/frontend.yaml. Si uno de los dos cambia, el balanceador
+    comprueba un puerto donde no escucha nadie y los nodos salen OutOfService.
+  EOT
+  type        = number
+  default     = 30080
+}

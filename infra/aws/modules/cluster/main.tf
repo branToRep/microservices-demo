@@ -94,3 +94,31 @@ resource "aws_eks_addon" "kube_proxy" {
   addon_name   = "kube-proxy"
   depends_on   = [aws_eks_node_group.principal]
 }
+
+# -----------------------------------------------------------------------------
+# Acceso del balanceador a los NodePort.
+#
+# Un Service de tipo LoadBalancer crea un ELB que reparte contra un puerto alto
+# de cada nodo (el rango 30000-32767). Normalmente el controlador de Kubernetes
+# anade esta regla al grupo de seguridad de los nodos cuando crea el balanceador;
+# aqui NO puede, porque el LabRole no le deja modificar grupos de seguridad.
+#
+# Sin ella, el ELB se crea "internet-facing" y con buena pinta, pero sus
+# comprobaciones de salud nunca llegan: los nodos salen OutOfService y la tienda
+# devuelve 000. El sintoma no menciona en ningun momento los grupos de seguridad.
+#
+# Se abre al CIDR de la VPC y no a 0.0.0.0/0: el balanceador vive dentro de la
+# VPC y ademas hace SNAT, asi que todo el trafico que llega a los nodos tiene
+# origen interno. Es mas estrecho que abrirlo a internet y suficiente.
+# -----------------------------------------------------------------------------
+resource "aws_vpc_security_group_ingress_rule" "nodeports_desde_elb" {
+  security_group_id = aws_eks_cluster.este.vpc_config[0].cluster_security_group_id
+
+  description = "NodePort para los Service de tipo LoadBalancer"
+  ip_protocol = "tcp"
+  from_port   = 30000
+  to_port     = 32767
+  cidr_ipv4   = var.cidr_vpc
+
+  tags = { Name = "${var.proyecto}-nodeports" }
+}

@@ -23,6 +23,7 @@ module "cluster" {
   source = "../../modules/cluster"
 
   proyecto           = var.proyecto
+  cidr_vpc           = var.cidr_vpc
   version_kubernetes = var.version_kubernetes
   tipo_instancia     = var.tipo_instancia
   numero_nodos       = var.numero_nodos
@@ -30,4 +31,18 @@ module "cluster" {
   # Si no hay NAT, los nodos viven en las publicas. Si lo hay, en las privadas.
   subredes_cluster = module.red.subredes_publicas
   subredes_nodos   = var.crear_nat ? module.red.subredes_privadas : module.red.subredes_publicas
+}
+
+# -----------------------------------------------------------------------------
+# El balanceador. Lo declaramos nosotros porque el controlador de Kubernetes no
+# tiene permisos para gestionarlo en este laboratorio (ver el modulo).
+# -----------------------------------------------------------------------------
+module "balanceador" {
+  source = "../../modules/balanceador"
+
+  proyecto          = var.proyecto
+  vpc_id            = module.red.vpc_id
+  subredes_publicas = module.red.subredes_publicas
+  asg_nodos         = module.cluster.asg_nodos
+  nodeport_frontend = var.nodeport_frontend
 }

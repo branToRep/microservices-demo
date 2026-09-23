@@ -44,3 +44,8 @@ crash.log
 # La linea 19 ignora *.tfvars. La configuracion del entorno NO es secreta y si
 # se versiona: sin ella, nadie mas puede reproducir el despliegue.
 !infra/aws/envs/dev/terraform.tfvars
+
+# El lockfile de Terraform SI se versiona: fija las versiones de los proveedores
+# para que la maquina de desarrollo y el runner instalen exactamente lo mismo.
+# Es el equivalente del go.sum. Google lo ignora en la linea 8; aqui lo recuperamos.
+!infra/aws/envs/dev/.terraform.lock.hcl
