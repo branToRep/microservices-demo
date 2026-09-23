@@ -2,16 +2,21 @@ output "vpc_id" {
   value = module.red.vpc_id
 }
 
-output "nombre_cluster" {
-  description = "Para 'aws eks update-kubeconfig --name <esto>'."
-  value       = module.cluster.nombre
+output "subredes_publicas" {
+  value = module.red.subredes_publicas
 }
 
-output "endpoint_cluster" {
-  value = module.cluster.endpoint
+output "subredes_privadas" {
+  value = module.red.subredes_privadas
 }
 
-output "comando_kubeconfig" {
-  description = "Copia y pega esto para hablar con el cluster."
-  value       = "aws eks update-kubeconfig --region ${var.region} --name ${module.cluster.nombre}"
-}
+# Llegan con el ticket #40, junto con el modulo cluster.
+#
+# output "nombre_cluster" {
+#   description = "Para 'aws eks update-kubeconfig --name <esto>'."
+#   value       = module.cluster.nombre
+# }
+#
+# output "comando_kubeconfig" {
+#   value = "aws eks update-kubeconfig --region ${var.region} --name ${module.cluster.nombre}"
+# }
