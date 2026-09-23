@@ -44,7 +44,12 @@ spec:
                 - ALL
             privileged: false
             readOnlyRootFilesystem: true
-          image: frontend
+          # TEMPORAL (opcion A): imagen publica de Google, SIN nuestras listas
+          # de deseos ni cuentas. Sirve para comprobar que el cluster, la red y
+          # el balanceador funcionan. Se sustituye por la nuestra cuando este
+          # publicada en GHCR o ECR. Ver el ticket de publicar imagenes.
+          image: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/frontend:v0.10.6
+          imagePullPolicy: IfNotPresent
           ports:
           - containerPort: 8080
           readinessProbe:
@@ -127,13 +132,20 @@ metadata:
   labels:
     app: frontend
 spec:
-  type: LoadBalancer
+  # NodePort y NO LoadBalancer: en este laboratorio el controlador de la nube no
+  # tiene permisos para gestionar balanceadores (los crea una vez y luego no
+  # puede ni actualizarlos ni borrarlos). El ELB lo declara Terraform, en
+  # infra/aws/modules/balanceador.
+  type: NodePort
   selector:
     app: frontend
   ports:
   - name: http
     port: 80
     targetPort: 8080
+    # PUERTO FIJO. Tiene que coincidir con la variable nodeport_frontend de
+    # Terraform. Si cambia uno, el balanceador comprueba un puerto vacio.
+    nodePort: 30080
 ---
 apiVersion: v1
 kind: ServiceAccount

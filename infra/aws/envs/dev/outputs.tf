@@ -28,3 +28,8 @@ output "comando_kubeconfig" {
   description = "Copia y pega esto para hablar con el cluster."
   value       = "aws eks update-kubeconfig --region ${var.region} --name ${module.cluster.nombre}"
 }
+
+output "url_tienda" {
+  description = "Abre esto en el navegador."
+  value       = "http://${module.balanceador.dns}"
+}

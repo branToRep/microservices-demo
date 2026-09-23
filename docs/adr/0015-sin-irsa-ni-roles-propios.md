@@ -24,3 +24,9 @@ LoadBalancer, que usa el permiso de `elasticloadbalancing` del LabRole.
 Los nodos y el plano de control comparten un rol mas amplio de lo necesario.
 Ademas el `LabRole` NO lleva `AmazonEKS_CNI_Policy`: si los pods se quedan en
 `ContainerCreating`, la causa es esa y no se puede corregir desde el proyecto.
+
+## Resultado medido (2026-09-23)
+
+El cluster se creo sin problema con el LabRole. El aviso sobre la
+`AmazonEKS_CNI_Policy` NO se materializo: `aws-node` arranca 2/2 en ambos nodos
+y CoreDNS recibe IP, asi que las politicas VocLab cubren lo que el CNI necesita.
