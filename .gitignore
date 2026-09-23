@@ -33,3 +33,14 @@ src/wishlistservice/genproto/
 # Go build artifacts.
 src/wishlistservice/*.exe
 src/wishlistservice/*.test
+
+# -----------------------------------------------------------------------------
+# Terraform (complementa las reglas que ya traia el repositorio)
+# -----------------------------------------------------------------------------
+.terraform/
+*.tfplan
+crash.log
+
+# La linea 19 ignora *.tfvars. La configuracion del entorno NO es secreta y si
+# se versiona: sin ella, nadie mas puede reproducir el despliegue.
+!infra/aws/envs/dev/terraform.tfvars
