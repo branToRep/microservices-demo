@@ -43,6 +43,19 @@ no menciona la arquitectura. Es una razon de peso para que construya el CI.
 `permissions: packages: write`. No hay nada que rotar, al contrario que las
 credenciales de AWS.
 
+### Corregido
+- `src/frontend/main.go` — usaba `otelgrpc.UnaryClientInterceptor` y
+  `StreamClientInterceptor`, **eliminadas** de la libreria hace varias versiones
+  y sustituidas por un unico `StatsHandler`. El `go.mod` de este fork ya venia
+  con `otelgrpc v0.70.0` (por los PR #3327 y #3445 de Google), y el `main.go`
+  que entro en el PR #35 estaba escrito contra la API anterior. Mismo patron que
+  el cableado de cuentas: ese PR reemplazo `main.go` entero por una version hecha
+  para otro conjunto de dependencias.
+
+  Lo encontro el primer intento de construir la imagen. La v1.5.1 habia dejado el
+  frontend compilando **contra las dependencias de la maquina donde se probo**;
+  aqui se compila contra las que declara el `go.mod`, que es lo que vale.
+
 ### Quitado del plan
 - La tercera imagen prevista, `loadgenerator`, no entra:
   `src/loadgenerator/locustfile.py` en este repositorio es el de Google **sin
