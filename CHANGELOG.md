@@ -9,11 +9,58 @@ La convencion concreta de este repositorio esta en [`docs/VERSIONADO.md`](docs/V
 ## [Sin publicar]
 
 ### Pendiente
-- `levantar.sh` y `apagar.sh`, para no depender de recordar cinco comandos.
 - Borrar los diez flujos heredados de Google, que fallan en cada push.
 - Flujo de GitHub Actions que corra `terraform plan` en cada PR.
 - Proteger `main` contra `push --force`.
 - Publicar nuestras imagenes en GHCR y apuntar los manifiestos a ellas.
+
+## [1.3.0] - 2026-09-25
+
+### Anadido
+- `scripts/aws/apagar.sh` — apaga y destruye en el orden que no deja residuos.
+
+El aporte del script no es encadenar comandos, es el **orden**. Terraform
+destruye lo que Terraform creo, y nada mas; Kubernetes y EKS crean cosas por su
+cuenta dentro de la VPC. Si los nodos mueren con los pods encima, esas cosas se
+quedan bloqueando el borrado de las subredes con `DependencyViolation`, Terraform
+reintenta veinte minutos y se rinde, y el error nunca menciona la causa.
+
+Son tres residuos, con tres duenos distintos:
+
+| Lo que queda | Quien lo creo |
+|---|---|
+| grupo de seguridad `k8s-elb-...` | el controlador de Kubernetes, para un Service de tipo LoadBalancer |
+| interfaz de red `aws-K8S-i-...` | el CNI, para dar IPs a los pods |
+| grupo `eks-cluster-sg-...` | EKS mismo, al crear el cluster |
+
+Quitar los pods **antes** de tocar AWS evita casi todo: si se van primero, el CNI
+devuelve sus interfaces solo. El script hace eso, espera, y si el `destroy` falla
+igual, barre los residuos y reintenta hasta tres veces.
+
+Tambien se niega a borrar nada si `kubectl` apunta a otro cluster, para no
+destruir por error algo que no es este proyecto.
+
+## [1.2.0] - 2026-09-25
+
+### Anadido
+- `scripts/aws/levantar.sh` — levanta todo con un comando. Antes eran cinco
+  pasos en dos directorios distintos, y equivocarse de directorio o de contexto
+  de kubectl daba errores que no se parecian a su causa.
+
+El script no solo encadena los comandos; incorpora las dos comprobaciones que
+mas tiempo costaron durante el desarrollo:
+
+- **Que las credenciales sirvan de verdad.** Hace `aws s3 ls` contra el bucket
+  del estado, no `sts get-caller-identity`: ese ultimo responde igual con
+  credenciales ya canceladas por la SCP del laboratorio, asi que no prueba nada.
+- **Que kubectl apunte al cluster de AWS.** Compara el contexto con el nombre
+  del cluster y se detiene si no coinciden. Once pods corriendo en el Kubernetes
+  de Docker Desktop parecen exito y no lo son.
+
+Ademas lee el bucket desde `backend.hcl` y explica como crearlo si falta, espera
+a que los despliegues esten disponibles, y sondea la URL hasta recibir un 200
+—los pods pueden estar listos mientras el balanceador sigue marcando los nodos
+`OutOfService` durante un minuto mas.
 
 ## [1.1.1] - 2026-09-25
 
@@ -122,7 +169,9 @@ aplicacion y no como un cambio de plataforma.
 - El nombre del bucket del estado esta escrito a fuego en `backend.tf`. En otra
   computadora hay que cambiarlo a mano; se arregla en la 1.1.0.
 
-[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v1.1.1...HEAD
+[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/branToRep/microservices-demo/compare/v1.2.0...v1.3.0
+[1.2.0]: https://github.com/branToRep/microservices-demo/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/branToRep/microservices-demo/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/branToRep/microservices-demo/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/branToRep/microservices-demo/compare/v1.0.1...v1.0.2
