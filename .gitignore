@@ -27,8 +27,10 @@ pkg/
 release/wi-kubernetes-manifests.yaml
 vendor/
 gha-creds-*.json
-# Generated gRPC code.
-src/wishlistservice/genproto/
+# El codigo gRPC generado SI se versiona, igual que el de Google en
+# src/frontend/genproto/demo.pb.go. Sin el, ni el frontend ni el wishlistservice
+# compilan en un clon limpio. Se regenera con ./scripts/generar-protos.sh
+# cuando cambia protos/wishlist.proto. Ver el ADR 0016.
 
 # Go build artifacts.
 src/wishlistservice/*.exe
