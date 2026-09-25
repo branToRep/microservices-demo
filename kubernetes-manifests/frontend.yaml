@@ -48,8 +48,14 @@ spec:
           # de deseos ni cuentas. Sirve para comprobar que el cluster, la red y
           # el balanceador funcionan. Se sustituye por la nuestra cuando este
           # publicada en GHCR o ECR. Ver el ticket de publicar imagenes.
-          image: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/frontend:v0.10.6
-          imagePullPolicy: IfNotPresent
+          # Nuestra imagen, no la publica de Google. Es lo que hace que la
+          # tienda muestre las listas de deseos.
+          #
+          # Va :main y no un SHA a proposito: es el suelo para un despliegue
+          # desde cero. El trabajo "desplegar" de publicar-y-desplegar.yml
+          # apunta al SHA exacto con "kubectl set image".
+          image: ghcr.io/brantorep/frontend:main
+          imagePullPolicy: Always
           ports:
           - containerPort: 8080
           readinessProbe:
@@ -87,6 +93,11 @@ spec:
             value: "adservice:9555"
           - name: SHOPPING_ASSISTANT_SERVICE_ADDR
             value: "shoppingassistantservice:80"
+          # El codigo tiene este mismo valor por defecto, pero declararlo aqui
+          # hace visible la dependencia: quien lea el manifiesto ve que el
+          # frontend habla con el wishlistservice.
+          - name: WISHLIST_SERVICE_ADDR
+            value: "wishlistservice:8080"
           # # ENV_PLATFORM: One of: local, gcp, aws, azure, onprem, alibaba
           # # When not set, defaults to "local" unless running in GKE, otherwies auto-sets to gcp
           # - name: ENV_PLATFORM
