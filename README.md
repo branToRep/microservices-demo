@@ -1,3 +1,36 @@
+> ## Este es un fork con trabajo propio
+>
+> Sobre la tienda de demostración de Google, este repositorio añade:
+>
+> - **Infraestructura en AWS declarada en Terraform** — VPC, EKS y balanceador,
+>   21 recursos en tres módulos: [`docs/infra.md`](docs/infra.md)
+> - **Un servicio propio**, listas de deseos (`src/wishlistservice/`) con su
+>   interfaz en el frontend
+> - **Integración y despliegue continuos** — un PR se revisa solo, y un merge a
+>   `main` construye, publica y despliega:
+>   [`.github/workflows/`](.github/workflows/)
+> - **Dieciséis versiones etiquetadas**, una por ticket, con el razonamiento de
+>   cada una en [`CHANGELOG.md`](CHANGELOG.md) y la convención en
+>   [`docs/VERSIONADO.md`](docs/VERSIONADO.md)
+>
+> ### Por dónde empezar
+>
+> | Si quieres… | Lee |
+> |---|---|
+> | levantarlo | [`docs/infra.md`](docs/infra.md) § 8, o `./scripts/aws/levantar.sh` |
+> | entender la infraestructura | [`docs/infra.md`](docs/infra.md) |
+> | ver el paso a paso del proyecto | [`CHANGELOG.md`](CHANGELOG.md), de abajo arriba |
+> | saber por qué se decidió algo raro | [`docs/adr/`](docs/adr/) — cinco decisiones registradas |
+> | comprobar que es reproducible | [`docs/PRUEBA-CLON-LIMPIO.md`](docs/PRUEBA-CLON-LIMPIO.md) |
+>
+> Levantarlo requiere una cuenta de AWS Academy y escribir un archivo de dos
+> líneas (`backend.hcl`). Ningún archivo `.tf` se edita — eso está comprobado y
+> registrado.
+>
+> El insignia de CI de aquí abajo y el resto de este README son de Google.
+
+---
+
 <!-- <p align="center">
 <img src="/src/frontend/static/icons/Hipster_HeroLogoMaroon.svg" width="300" alt="Online Boutique" />
 </p> -->
