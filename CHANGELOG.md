@@ -56,6 +56,15 @@ Settings → Environments, el despliegue pasara a esperar aprobacion **sin tocar
 una linea del workflow**. Se deja asi porque configurar entornos pide permisos
 de administracion, que este equipo no tiene sobre el fork.
 
+### Corregido
+- `scripts/aws/sincronizar-credenciales.sh` — no tenia **shebang** y estaba
+  versionado con modo `100644`, sin bit de ejecucion. Es decir,
+  `./scripts/aws/sincronizar-credenciales.sh` fallaba con "permission denied" en
+  cualquier clon, y ese es el comando que documentan este workflow,
+  `terraform-ci.yml` y `docs/IMAGENES-GHCR.md`. Los otros tres scripts del
+  proyecto si estaban en `100755`. Lo encontro el primer intento de usarlo para
+  desplegar.
+
 ### Revertir
 Si el `rollout` no cuaja, el propio trabajo hace `kubectl rollout undo`.
 Kubernetes mantiene los pods viejos hasta que los nuevos esten listos, asi que la
