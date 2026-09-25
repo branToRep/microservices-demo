@@ -9,8 +9,41 @@ La convencion concreta de este repositorio esta en [`docs/VERSIONADO.md`](docs/V
 ## [Sin publicar]
 
 ### Pendiente
-- Proteger `main` contra `push --force`.
 - Publicar nuestras imagenes en GHCR y apuntar los manifiestos a ellas.
+
+## [1.4.1] - 2026-09-25
+
+### Anadido
+- `docs/PROTECCION-RAMAS.md` — la configuracion de proteccion de `main`, con el
+  comando que la aplica y el motivo de cada ajuste.
+
+La proteccion en si no es un archivo del repositorio, es configuracion de
+GitHub. Se documenta aqui porque de otro modo nadie sabria que existe, ni podria
+reproducirla en otro repositorio.
+
+Lo que impide, en orden de importancia:
+
+- **`push --force` sobre `main`.** Es lo unico verdaderamente irreversible de
+  Git: reescribe commits que otros ya tienen. Borrar una rama fusionada, en
+  cambio, no destruye nada — sus commits siguen en la historia de `main`.
+- **Borrar `main`.**
+- **Fusionar con el CI en rojo**, exigiendo el trabajo "Formato y sintaxis", que
+  es el que no depende de credenciales de AWS.
+- **Fusionar contra un `main` desactualizado** (`strict: true`), que es lo que
+  arrastraba trabajo ajeno a los PR.
+
+No exige aprobacion de otra persona (`required_approving_review_count: 0`): si
+exige PR, pero no que alguien lo apruebe. Somos dos con horarios distintos y un
+PR esperando dias no ensena nada sobre CI/CD. Subirlo a 1 no requiere ningun
+otro cambio.
+
+**La proteccion queda documentada pero todavia no aplicada.** El fork pertenece
+a `branToRep` y el resto del equipo entra como colaborador con permiso `push`,
+que alcanza para ramas y PR pero no para configurar la rama por defecto: el
+comando devuelve 404 (GitHub responde 404 en vez de 403 para no revelar si el
+recurso existe). El repositorio es publico, asi que no es cuestion de plan.
+Puede aplicarla `branToRep`, o quien sea subido a Admin. El documento explica
+que riesgo queda mientras no este.
 
 ## [1.4.0] - 2026-09-25
 
@@ -224,7 +257,8 @@ aplicacion y no como un cambio de plataforma.
 - El nombre del bucket del estado esta escrito a fuego en `backend.tf`. En otra
   computadora hay que cambiarlo a mano; se arregla en la 1.1.0.
 
-[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v1.4.0...HEAD
+[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/branToRep/microservices-demo/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/branToRep/microservices-demo/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/branToRep/microservices-demo/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/branToRep/microservices-demo/compare/v1.2.0...v1.3.0
