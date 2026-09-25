@@ -254,10 +254,13 @@ func mustConnGRPC(ctx context.Context, conn **grpc.ClientConn, addr string) {
 	var err error
 	ctx, cancel := context.WithTimeout(ctx, time.Second*3)
 	defer cancel()
+	// otelgrpc.UnaryClientInterceptor y StreamClientInterceptor se eliminaron de
+	// la libreria; un solo StatsHandler sustituye a los dos. El go.mod de este
+	// fork ya venia con otelgrpc v0.70.0, y el main.go que entro en el PR #35
+	// estaba escrito contra la API anterior.
 	*conn, err = grpc.DialContext(ctx, addr,
 		grpc.WithInsecure(),
-		grpc.WithUnaryInterceptor(otelgrpc.UnaryClientInterceptor()),
-		grpc.WithStreamInterceptor(otelgrpc.StreamClientInterceptor()))
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
 	if err != nil {
 		panic(errors.Wrapf(err, "grpc: failed to connect %s", addr))
 	}
