@@ -9,9 +9,44 @@ La convencion concreta de este repositorio esta en [`docs/VERSIONADO.md`](docs/V
 ## [Sin publicar]
 
 ### Pendiente
-- Flujo de GitHub Actions que corra `terraform plan` en cada PR.
 - Proteger `main` contra `push --force`.
 - Publicar nuestras imagenes en GHCR y apuntar los manifiestos a ellas.
+
+## [1.4.0] - 2026-09-25
+
+### Anadido
+- `.github/workflows/terraform-ci.yml` — revisa la infraestructura en cada PR
+  que toque `infra/`. Primer flujo propio del proyecto; la carpeta estaba vacia
+  desde la 1.3.1.
+
+Son **dos trabajos**, y la division es lo importante:
+
+| Trabajo | Que hace | Necesita AWS | Bloquea la fusion |
+|---|---|---|---|
+| Formato y sintaxis | `fmt -check`, `init -backend=false`, `validate` | no | **si** |
+| Plan contra AWS | `plan` y lo comenta en el PR | si | no |
+
+El primero corre `init -backend=false`, que prepara modulos y proveedor sin
+conectarse a S3. Por eso valida sin credenciales y nunca falla por razones
+ajenas al codigo.
+
+El segundo solo arranca si existen los secretos y la variable `TF_BUCKET`, y
+lleva `continue-on-error`. El motivo es que las credenciales del laboratorio
+caducan cada sesion: si el PR se bloqueara por no haberlas sincronizado hoy, el
+CI estaria en rojo por algo que no es el codigo, y un CI siempre en rojo se
+aprende a ignorar — que es justo el problema que resolvio la 1.3.1.
+
+Detalles que no se ven pero importan:
+
+- `plan -lock=false` — el CI solo lee. Sin esa bandera, un plan puede dejar el
+  candado puesto en S3 y bloquear a quien este aplicando desde su maquina.
+- El comentario del plan lleva una marca oculta y se **reescribe** en cada
+  commit, en vez de apilar un comentario por corrida.
+- `concurrency` cancela la corrida anterior del mismo PR.
+
+### Corregido
+- `scripts/aws/sincronizar-credenciales.sh` — el mensaje final decia
+  "credenciales configudradasproceso".
 
 ## [1.3.1] - 2026-09-25
 
@@ -186,7 +221,8 @@ aplicacion y no como un cambio de plataforma.
 - El nombre del bucket del estado esta escrito a fuego en `backend.tf`. En otra
   computadora hay que cambiarlo a mano; se arregla en la 1.1.0.
 
-[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v1.3.1...HEAD
+[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/branToRep/microservices-demo/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/branToRep/microservices-demo/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/branToRep/microservices-demo/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/branToRep/microservices-demo/compare/v1.1.1...v1.2.0
