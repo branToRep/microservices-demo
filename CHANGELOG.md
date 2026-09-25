@@ -11,6 +11,51 @@ La convencion concreta de este repositorio esta en [`docs/VERSIONADO.md`](docs/V
 ### Pendiente
 - Publicar nuestras imagenes en GHCR y apuntar los manifiestos a ellas.
 
+## [1.6.0] - 2026-09-25
+
+**Primera version en la que GitHub *hace* algo.** Hasta ahora el CI opinaba
+—revisaba formato, validaba, comentaba planes— pero construir seguia siendo cosa
+de un portatil. Desde aqui, las imagenes salen del runner.
+
+### Anadido
+- `.github/workflows/publicar-imagenes.yml` — construye y publica
+  `frontend` y `wishlistservice` en GHCR en cada push a `main` que toque
+  `src/frontend/`, `src/wishlistservice/` o `protos/`.
+- `docs/IMAGENES-GHCR.md` — que imagenes son nuestras, como se etiquetan y el
+  unico paso de configuracion que hay que hacer una vez.
+
+### Decisiones que lleva dentro
+
+**Publica, no despliega.** El despliegue a EKS es la v2.0.0. Publicar es seguro
+y repetible; desplegar cambia lo que la gente ve. Van en versiones distintas.
+
+**Etiqueta por SHA del commit**, no `:latest`. `ghcr.io/…/frontend:a8a7ede` dice
+exactamente que codigo corre, y volver atras es apuntar a otro SHA. Se publica
+tambien `:main` por comodidad, pero los despliegues usan el SHA: con `:latest`
+nadie sabe que version esta viva.
+
+**Solo `linux/amd64`.** El runner es amd64 y los nodos `t3.medium` tambien, asi
+que no hace falta emulacion. Construir en un Mac (arm64) daba imagenes que
+arrancan en local y fallan en el cluster con `exec format error`, un mensaje que
+no menciona la arquitectura. Es una razon de peso para que construya el CI.
+
+**Sin secretos.** El `GITHUB_TOKEN` de cada ejecucion basta con
+`permissions: packages: write`. No hay nada que rotar, al contrario que las
+credenciales de AWS.
+
+### Quitado del plan
+- La tercera imagen prevista, `loadgenerator`, no entra:
+  `src/loadgenerator/locustfile.py` en este repositorio es el de Google **sin
+  modificar** y no genera trafico de listas. Publicar una imagen identica a la
+  publica no aporta nada.
+
+### Pendiente de un paso manual
+Los paquetes de GHCR nacen **privados**, y una imagen privada no la puede
+descargar el cluster: los nodos no tienen credenciales de GitHub y el pod queda
+en `ImagePullBackOff` con un 401 que parece un problema de red. Hay que hacerlas
+publicas una vez, y solo puede el dueno del paquete. El procedimiento y la
+alternativa (`imagePullSecret`) estan en `docs/IMAGENES-GHCR.md`.
+
 ## [1.5.1] - 2026-09-25
 
 Esta version no anade funciones: **hace que el codigo compile**. Los dos defectos
@@ -352,7 +397,8 @@ aplicacion y no como un cambio de plataforma.
 - El nombre del bucket del estado esta escrito a fuego en `backend.tf`. En otra
   computadora hay que cambiarlo a mano; se arregla en la 1.1.0.
 
-[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v1.5.1...HEAD
+[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/branToRep/microservices-demo/compare/v1.5.1...v1.6.0
 [1.5.1]: https://github.com/branToRep/microservices-demo/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/branToRep/microservices-demo/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/branToRep/microservices-demo/compare/v1.4.0...v1.4.1
