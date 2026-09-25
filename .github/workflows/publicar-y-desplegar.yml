@@ -1,0 +1,175 @@
+# -----------------------------------------------------------------------------
+# Construye nuestras dos imagenes y las publica en GHCR.
+#
+# Dos trabajos encadenados: publicar -> desplegar. El segundo solo arranca si el
+# primero termino bien (needs), y solo despliega si hay credenciales de AWS
+# frescas en los secretos.
+#
+# POR QUE NO FALLA CUANDO EL LABORATORIO ESTA CERRADO
+# Las credenciales del lab caducan con la sesion. Si el despliegue fallara por
+# eso, el pipeline estaria en rojo por algo que no es el codigo — y un CI siempre
+# en rojo se aprende a ignorar, que es el problema que resolvio la v1.3.1. Asi
+# que cuando no hay credenciales, el trabajo se SALTA con un aviso.
+#
+# LA PUERTA MANUAL
+# El trabajo lleva 'environment: produccion'. Hoy ese entorno no tiene reglas y
+# no bloquea nada. Si quien administra el repositorio le anade "Required
+# reviewers" en Settings > Environments, el despliegue pasara a esperar
+# aprobacion SIN tocar una linea de este archivo.
+#
+# Tu portatil no interviene. Y el runner de GitHub es amd64, igual que los nodos
+# t3.medium, asi que no hace falta emulacion: construir en un Mac (arm64) daba
+# imagenes que arrancan en local y fallan en el cluster con "exec format error",
+# un mensaje que no menciona la arquitectura por ningun lado.
+#
+# QUE PUBLICA
+#   ghcr.io/<duenio>/frontend:<sha>         y :main
+#   ghcr.io/<duenio>/wishlistservice:<sha>  y :main
+#
+# La etiqueta con el SHA del commit es la que importa: identifica exactamente que
+# codigo corre y permite volver atras. La etiqueta :main es comodidad para mirar.
+#
+# NO necesita ningun secreto. El GITHUB_TOKEN que GitHub genera para cada
+# ejecucion basta, con el permiso `packages: write` de abajo.
+# -----------------------------------------------------------------------------
+name: Publicar y desplegar
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/frontend/**'
+      - 'src/wishlistservice/**'
+      - 'protos/**'
+      - 'kubernetes-manifests/**'
+      - '.github/workflows/publicar-y-desplegar.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: publicar-y-desplegar-${{ github.ref }}
+  cancel-in-progress: false   # no cancelar una publicacion a medias
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publicar:
+    name: ${{ matrix.servicio }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false        # si una imagen falla, la otra se publica igual
+      matrix:
+        servicio: [frontend, wishlistservice]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # GHCR exige el nombre del propietario en minusculas. branToRep -> brantorep
+      - id: ctx
+        run: |
+          echo "duenio=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse --short HEAD)"   >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Construir y publicar
+        uses: docker/build-push-action@v6
+        with:
+          context: src/${{ matrix.servicio }}
+          # Solo amd64. Anadir arm64 doblaria el tiempo para una arquitectura
+          # que ningun nodo del cluster usa.
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/${{ steps.ctx.outputs.duenio }}/${{ matrix.servicio }}:${{ steps.ctx.outputs.sha }}
+            ghcr.io/${{ steps.ctx.outputs.duenio }}/${{ matrix.servicio }}:main
+          # La cache de GitHub Actions evita reconstruir dependencias que no
+          # cambiaron. Sin ella cada push recompila todo el modulo de Go.
+          cache-from: type=gha,scope=${{ matrix.servicio }}
+          cache-to: type=gha,scope=${{ matrix.servicio }},mode=max
+
+      - name: Resumen
+        run: |
+          {
+            echo "### ${{ matrix.servicio }}"
+            echo
+            echo "Publicada como \`${{ steps.ctx.outputs.sha }}\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  desplegar:
+    name: Desplegar en EKS
+    needs: publicar
+    runs-on: ubuntu-latest
+    environment: produccion
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      AWS_REGION: us-east-1
+      CLUSTER: boutique
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: ctx
+        run: |
+          echo "duenio=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse --short HEAD)"   >> "$GITHUB_OUTPUT"
+
+      # No basta con que existan los secretos: las credenciales del laboratorio
+      # caducan solas, asi que hay que comprobar que TODAVIA sirven.
+      - id: aws
+        name: Las credenciales sirven?
+        run: |
+          if [ -z "$AWS_ACCESS_KEY_ID" ]; then
+            echo "vivas=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Sin credenciales de AWS en los secretos. No despliego."
+          elif aws eks describe-cluster --name "$CLUSTER" --region "$AWS_REGION" >/dev/null 2>&1; then
+            echo "vivas=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "vivas=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Las credenciales caducaron o el cluster no existe. Corre ./scripts/aws/sincronizar-credenciales.sh con el laboratorio abierto."
+          fi
+
+      - name: Apuntar kubectl al cluster
+        if: steps.aws.outputs.vivas == 'true'
+        run: aws eks update-kubeconfig --region "$AWS_REGION" --name "$CLUSTER"
+
+      - name: Desplegar el SHA exacto
+        if: steps.aws.outputs.vivas == 'true'
+        run: |
+          IMG=ghcr.io/${{ steps.ctx.outputs.duenio }}
+          SHA=${{ steps.ctx.outputs.sha }}
+
+          kubectl set image deployment/frontend        server=$IMG/frontend:$SHA
+          kubectl set image deployment/wishlistservice server=$IMG/wishlistservice:$SHA
+
+          kubectl rollout status deployment/frontend        --timeout=240s
+          kubectl rollout status deployment/wishlistservice --timeout=240s
+
+      # Kubernetes mantiene los pods viejos hasta que los nuevos esten listos,
+      # asi que si el despliegue no cuaja la tienda sigue en pie. Esto devuelve
+      # el deployment a la revision anterior en vez de dejarlo a medias.
+      - name: Revertir si el despliegue fallo
+        if: failure() && steps.aws.outputs.vivas == 'true'
+        run: |
+          kubectl rollout undo deployment/frontend        || true
+          kubectl rollout undo deployment/wishlistservice || true
+
+      - name: Resumen
+        if: steps.aws.outputs.vivas == 'true'
+        run: |
+          URL=$(kubectl get svc frontend-external -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+          {
+            echo "### Desplegado"
+            echo
+            echo "Version \`${{ steps.ctx.outputs.sha }}\` corriendo en el cluster."
+            [ -n "$URL" ] && echo "La tienda: http://$URL"
+          } >> "$GITHUB_STEP_SUMMARY"
