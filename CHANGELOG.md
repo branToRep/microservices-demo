@@ -47,6 +47,9 @@ Detalles que no se ven pero importan:
 ### Corregido
 - `scripts/aws/sincronizar-credenciales.sh` — el mensaje final decia
   "credenciales configudradasproceso".
+- Formato canonico (`terraform fmt`) en cinco archivos de `infra/aws/modules/`.
+  Llevaban mal formateados desde la 1.0.0 y nadie lo habia notado: el flujo
+  nuevo lo detecto en su propio PR, que es exactamente para lo que esta.
 
 ## [1.3.1] - 2026-09-25
 

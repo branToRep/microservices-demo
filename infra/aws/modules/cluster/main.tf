@@ -22,7 +22,7 @@ resource "aws_eks_cluster" "este" {
 
   vpc_config {
     subnet_ids              = var.subredes_cluster
-    endpoint_public_access  = true   # para poder usar kubectl desde el portatil
+    endpoint_public_access  = true # para poder usar kubectl desde el portatil
     endpoint_private_access = true
   }
 
@@ -51,8 +51,8 @@ resource "aws_eks_node_group" "principal" {
 
   scaling_config {
     desired_size = var.numero_nodos
-    min_size     = 0              # 0 permite APAGAR sin destruir el cluster
-    max_size     = 3              # el laboratorio limita a 9 instancias
+    min_size     = 0 # 0 permite APAGAR sin destruir el cluster
+    max_size     = 3 # el laboratorio limita a 9 instancias
   }
 
   update_config {
@@ -78,9 +78,9 @@ resource "aws_eks_node_group" "principal" {
 # puede adjuntar la politica (no hay permiso de IAM): habria que comprobar si
 # las politicas VocLab ya lo cubren.
 resource "aws_eks_addon" "vpc_cni" {
-  cluster_name  = aws_eks_cluster.este.name
-  addon_name    = "vpc-cni"
-  depends_on    = [aws_eks_node_group.principal]
+  cluster_name = aws_eks_cluster.este.name
+  addon_name   = "vpc-cni"
+  depends_on   = [aws_eks_node_group.principal]
 }
 
 resource "aws_eks_addon" "coredns" {

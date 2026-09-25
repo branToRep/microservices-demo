@@ -1,5 +1,5 @@
-variable "proyecto"          { type = string }
-variable "vpc_id"            { type = string }
+variable "proyecto" { type = string }
+variable "vpc_id" { type = string }
 variable "subredes_publicas" { type = list(string) }
 
 variable "asg_nodos" {

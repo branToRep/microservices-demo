@@ -14,7 +14,7 @@ data "aws_availability_zones" "disponibles" {
 
 resource "aws_vpc" "esta" {
   cidr_block           = var.cidr_vpc
-  enable_dns_hostnames = true          # EKS lo necesita
+  enable_dns_hostnames = true # EKS lo necesita
   enable_dns_support   = true
 
   tags = { Name = "${var.proyecto}-vpc" }
