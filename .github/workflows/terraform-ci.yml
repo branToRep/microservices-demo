@@ -21,11 +21,19 @@
 # -----------------------------------------------------------------------------
 name: Terraform CI
 
+# SIN filtro de rutas, a proposito.
+#
+# Este flujo es un check REQUERIDO en la proteccion de `main`. Un check requerido
+# que no corre no queda "no aplicable": queda PENDIENTE, y bloquea la fusion para
+# siempre. Con `paths: infra/**`, cualquier PR que solo tocara documentacion o
+# scripts era imposible de fusionar, y el mensaje de GitHub —"the base branch
+# policy prohibits the merge"— no explica por que.
+#
+# La regla general: un check requerido tiene que correr en TODOS los PR. Aqui
+# sale gratis, porque fmt y validate tardan unos veinte segundos y no necesitan
+# credenciales.
 on:
   pull_request:
-    paths:
-      - 'infra/**'
-      - '.github/workflows/terraform-ci.yml'
   workflow_dispatch:
 
 # Si llega otro commit al mismo PR, cancela la corrida anterior.

@@ -31,6 +31,14 @@ que se planteo al empezar, y aqui queda comprobado en lugar de supuesto.
   equivocado. Ahora cuentan las coincidencias antes de leerlas y dicen que pasa.
 - `docs/PROTECCION-RAMAS.md` — decia "documentada, no aplicada todavia". Ya esta
   aplicada; se anota como, quien y el detalle del `name already protected`.
+- `.github/workflows/terraform-ci.yml` — se le quita el filtro `paths`. El flujo
+  es un check **requerido** en la proteccion de `main`, y un check requerido que
+  no corre no queda "no aplicable": queda **pendiente**, y bloquea la fusion para
+  siempre. Con `paths: infra/**`, cualquier PR que solo tocara documentacion o
+  scripts era imposible de fusionar, y el mensaje de GitHub ("the base branch
+  policy prohibits the merge") no dice por que. Lo descubrio este mismo PR al
+  intentar fusionarse. La regla que queda: **un check requerido corre en todos
+  los PR.**
 
 ### La prueba
 
