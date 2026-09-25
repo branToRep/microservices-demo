@@ -1,0 +1,17 @@
+# Plantilla de la configuracion del backend.
+#
+#   cp backend.hcl.ejemplo backend.hcl     <- y cambia el nombre de abajo
+#   terraform init -backend-config=backend.hcl
+#
+# El bucket se crea UNA VEZ, antes del primer init:
+#   ../../bootstrap/crear-bucket-estado.sh <nombre-del-bucket>
+#
+# Los nombres de bucket son unicos en TODO AWS, no solo en tu cuenta: si dos
+# personas usan el mismo, la segunda recibe un error. Anade tus iniciales, la
+# fecha o un numero.
+#
+# backend.hcl (el de verdad) NO se versiona: cada quien tiene el suyo.
+# Este ejemplo SI se versiona.
+
+bucket = "boutique-tfstate-CAMBIAME"
+region = "us-east-1"

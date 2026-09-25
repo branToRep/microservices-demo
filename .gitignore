@@ -49,3 +49,7 @@ crash.log
 # para que la maquina de desarrollo y el runner instalen exactamente lo mismo.
 # Es el equivalente del go.sum. Google lo ignora en la linea 8; aqui lo recuperamos.
 !infra/aws/envs/dev/.terraform.lock.hcl
+
+# La configuracion del backend es de cada maquina (cada quien tiene su bucket).
+# Se versiona la plantilla backend.hcl.ejemplo, no el archivo real.
+infra/aws/envs/dev/backend.hcl
