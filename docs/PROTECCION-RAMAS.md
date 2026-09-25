@@ -57,7 +57,7 @@ Lo que **no** se protege, a proposito:
 - **Las ramas de trabajo.** `feat/NN-slug` se reescribe y se borra libremente
   mientras no este fusionada. Es donde tiene sentido experimentar.
 
-## Estado actual: documentada, no aplicada todavía
+## Estado actual: aplicada
 
 El comando de arriba devuelve **404** si lo corre quien no administra el
 repositorio. GitHub responde 404 en vez de 403 para no revelar si el recurso
@@ -86,11 +86,38 @@ rama por defecto.
 - `branToRep`, corriendo el bloque de arriba tal cual.
 - O cualquiera a quien suba a **Admin** en Settings → Collaborators.
 
-### Qué riesgo queda mientras no esté
+### Aplicada el 25 de septiembre de 2026
 
-Solo uno, y es el importante: nada impide técnicamente un `push --force` sobre
-`main`. Lo que hoy lo evita es convención, no configuración — y una convención
-no detiene un comando escrito por error.
+La aplicó `branToRep` desde **Settings → Branches** en la web, que es el mismo
+conjunto de ajustes que el JSON de arriba, casilla por casilla. La regla ya
+existía a medias de un intento anterior, y de ahí el mensaje
+`name already protected: main` al intentar crear una segunda: en ese caso se
+**edita** la existente, no se crea otra.
+
+Comprobable sin permiso de administración:
+
+```bash
+gh api repos/branToRep/microservices-demo/branches/main --jq '.protected'
+```
+
+Efecto inmediato en el dia a dia: **ya no se puede hacer `git push` directo a
+`main`**. Todo commit pasa por PR. Las etiquetas siguen subiendose normal
+(`git push origin v1.5.0` no toca la rama).
+
+El archivo `docs/proteccion-main.json` queda versionado para poder reaplicar la
+misma configuración en otro repositorio, o restaurarla si alguien la cambia:
+
+```bash
+gh api -X PUT repos/branToRep/microservices-demo/branches/main/protection \
+  --input docs/proteccion-main.json
+```
+
+### Qué riesgo quedaba mientras no estuvo
+
+Uno solo, y era el importante: nada impedía técnicamente un `push --force` sobre
+`main`. Lo único que lo evitaba era convención, no configuración — y una
+convención no detiene un comando escrito por error. Queda escrito porque durante
+cuatro versiones (de la 1.0.0 a la 1.4.0) ese agujero estuvo abierto.
 
 Lo que sí sigue en pie sin protección:
 
