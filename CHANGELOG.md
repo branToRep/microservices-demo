@@ -11,6 +11,56 @@ La convencion concreta de este repositorio esta en [`docs/VERSIONADO.md`](docs/V
 ### Pendiente
 - Publicar nuestras imagenes en GHCR y apuntar los manifiestos a ellas.
 
+## [2.0.0] - 2026-09-25
+
+**La tienda cambia, y nadie toca AWS.** Fusionas a `main`, GitHub construye la
+imagen, la publica y actualiza el despliegue en el cluster. La misma URL muestra
+algo distinto. Esto es lo que el proyecto existia para demostrar.
+
+MAYOR porque cambia lo que la tienda **hace** para quien la usa: aparecen las
+listas de deseos. Es la primera funcion nuestra que se ve.
+
+### Cambiado
+- `kubernetes-manifests/frontend.yaml` — la imagen pasa de la publica de Google
+  (`…/microservices-demo/frontend:v0.10.6`) a `ghcr.io/brantorep/frontend:main`.
+  Se declara ademas `WISHLIST_SERVICE_ADDR`: el codigo ya tenia ese valor por
+  defecto, pero ponerlo en el manifiesto hace visible la dependencia.
+- `.github/workflows/publicar-imagenes.yml` pasa a llamarse
+  `publicar-y-desplegar.yml` y **gana el trabajo `desplegar`**.
+
+### El pipeline completo
+
+```
+PR abierto    →  fmt · validate            (terraform-ci.yml)
+merge a main  →  publicar en GHCR
+                    ↓ needs: publicar
+                 desplegar en EKS
+```
+
+El despliegue apunta al **SHA exacto** con `kubectl set image`, no a `:main`. Es
+lo que permite saber que version corre y volver atras apuntando a otro SHA. Las
+etiquetas `:main` de los manifiestos son el suelo para un despliegue desde cero.
+
+### Dos decisiones que lleva dentro
+
+**No falla cuando el laboratorio esta cerrado.** Las credenciales del lab caducan
+con la sesion. El trabajo comprueba que *todavia sirven* —no que existan: un
+secreto viejo existe igual— y si no, se **salta** con un aviso. Un despliegue en
+rojo por credenciales caducadas seria un pipeline mintiendo sobre el codigo, y
+un CI siempre en rojo se aprende a ignorar (el problema de la v1.3.1).
+
+**La puerta manual esta preparada, no activada.** El trabajo lleva
+`environment: produccion`. Hoy ese entorno no tiene reglas y no bloquea. Si quien
+administra el repositorio le anade "Required reviewers" en
+Settings → Environments, el despliegue pasara a esperar aprobacion **sin tocar
+una linea del workflow**. Se deja asi porque configurar entornos pide permisos
+de administracion, que este equipo no tiene sobre el fork.
+
+### Revertir
+Si el `rollout` no cuaja, el propio trabajo hace `kubectl rollout undo`.
+Kubernetes mantiene los pods viejos hasta que los nuevos esten listos, asi que la
+tienda no se cae durante un despliegue fallido.
+
 ## [1.7.0] - 2026-09-25
 
 El `wishlistservice` empieza a correr en el cluster. **Todavia no se ve nada** en
@@ -448,7 +498,8 @@ aplicacion y no como un cambio de plataforma.
 - El nombre del bucket del estado esta escrito a fuego en `backend.tf`. En otra
   computadora hay que cambiarlo a mano; se arregla en la 1.1.0.
 
-[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v1.7.0...HEAD
+[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/branToRep/microservices-demo/compare/v1.7.0...v2.0.0
 [1.7.0]: https://github.com/branToRep/microservices-demo/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/branToRep/microservices-demo/compare/v1.5.1...v1.6.0
 [1.5.1]: https://github.com/branToRep/microservices-demo/compare/v1.5.0...v1.5.1
