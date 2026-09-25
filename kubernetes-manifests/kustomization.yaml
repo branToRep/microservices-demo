@@ -26,6 +26,10 @@ resources:
  - productcatalogservice.yaml
  - recommendationservice.yaml
  - shippingservice.yaml
+ # Nuestro servicio. Existia desde el PR #31 pero nunca estuvo en esta lista,
+ # asi que 'kubectl apply -k' no lo aplicaba: el archivo estaba en el
+ # repositorio y el servicio no en el cluster.
+ - wishlistservice.yaml
 # components:
 # - ../kustomize/components/cymbal-branding
 # - ../kustomize/components/google-cloud-operations
