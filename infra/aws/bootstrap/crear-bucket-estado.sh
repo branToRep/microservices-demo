@@ -34,5 +34,5 @@ aws s3api put-public-access-block --bucket "$BUCKET" \
   || echo "AVISO: bloqueo de acceso publico denegado por la SCP"
 
 echo
-echo "Pon este nombre en terraform/envs/dev/backend.tf:"
+echo "Pon este nombre en infra/aws/envs/dev/backend.hcl:"
 echo "  bucket = \"$BUCKET\""
