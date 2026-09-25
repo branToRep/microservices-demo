@@ -1,0 +1,166 @@
+# -----------------------------------------------------------------------------
+# Revisa la infraestructura en cada PR.
+#
+# Dos trabajos, y la division es deliberada:
+#
+#   revisar  -> formato y sintaxis. NO necesita credenciales de AWS, asi que
+#               nunca falla por razones ajenas al codigo. Es el que decide si
+#               el PR se puede fusionar.
+#   plan     -> el plan de verdad contra AWS. Solo corre si hay credenciales en
+#               los secretos del repositorio, porque las del laboratorio
+#               caducan cada sesion. Informa, no bloquea.
+#
+# Por que separarlos: un CI que falla porque nadie sincronizo las credenciales
+# de hoy es un CI que se aprende a ignorar. Lo que bloquea tiene que depender
+# solo del codigo.
+#
+# Para que corra el plan, al empezar cada sesion del laboratorio:
+#   ./scripts/aws/sincronizar-credenciales.sh
+# y una sola vez, el nombre del bucket como variable del repositorio:
+#   gh variable set TF_BUCKET --body "boutique-tfstate-devops"
+# -----------------------------------------------------------------------------
+name: Terraform CI
+
+on:
+  pull_request:
+    paths:
+      - 'infra/**'
+      - '.github/workflows/terraform-ci.yml'
+  workflow_dispatch:
+
+# Si llega otro commit al mismo PR, cancela la corrida anterior.
+concurrency:
+  group: terraform-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  ENTORNO: infra/aws/envs/dev
+  VERSION_TERRAFORM: 1.16.3
+
+jobs:
+  revisar:
+    name: Formato y sintaxis
+    runs-on: ubuntu-latest
+    outputs:
+      hay_credenciales: ${{ steps.credenciales.outputs.hay }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.VERSION_TERRAFORM }}
+          terraform_wrapper: false
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive infra/
+
+      # -backend=false inicializa modulos y proveedor SIN conectarse a S3.
+      # Es lo que permite validar sin credenciales.
+      - name: terraform init (sin backend)
+        run: terraform -chdir=${{ env.ENTORNO }} init -backend=false -input=false
+
+      - name: terraform validate
+        run: terraform -chdir=${{ env.ENTORNO }} validate
+
+      - name: Hay credenciales para el plan?
+        id: credenciales
+        env:
+          LLAVE: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          BUCKET: ${{ vars.TF_BUCKET }}
+        run: |
+          if [ -n "$LLAVE" ] && [ -n "$BUCKET" ]; then
+            echo "hay=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "hay=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Sin credenciales o sin TF_BUCKET: me salto el plan."
+          fi
+
+  plan:
+    name: Plan contra AWS
+    needs: revisar
+    if: needs.revisar.outputs.hay_credenciales == 'true'
+    runs-on: ubuntu-latest
+    # Informa, no bloquea: las credenciales del laboratorio caducan solas.
+    continue-on-error: true
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.VERSION_TERRAFORM }}
+          terraform_wrapper: false
+
+      - name: terraform init
+        run: |
+          terraform -chdir=${{ env.ENTORNO }} init -input=false \
+            -backend-config="bucket=${{ vars.TF_BUCKET }}"
+
+      - name: terraform plan
+        run: |
+          # -lock=false: aqui solo leemos. Sin esto, un plan del CI puede dejar
+          # el candado puesto en S3 y bloquear a quien este aplicando.
+          terraform -chdir=${{ env.ENTORNO }} plan -no-color -input=false \
+            -lock=false > plan.txt 2>&1 || true
+
+          {
+            echo '### terraform plan'
+            echo '```'
+            tail -c 60000 plan.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          {
+            echo '<!-- terraform-plan -->'
+            echo '### terraform plan'
+            echo
+            echo '<details><summary>Ver el plan</summary>'
+            echo
+            echo '```'
+            tail -c 20000 plan.txt
+            echo '```'
+            echo
+            echo '</details>'
+            echo
+            echo '> Informativo. Las credenciales del laboratorio caducan cada'
+            echo '> sesion, asi que este trabajo no bloquea la fusion. Lo que'
+            echo '> bloquea es el trabajo "Formato y sintaxis".'
+          } > comentario.md
+
+      - name: Comentar el plan en el PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const cuerpo = fs.readFileSync('comentario.md', 'utf8');
+            const marca = '<!-- terraform-plan -->';
+            const previos = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            // Reescribe su propio comentario en vez de apilar uno por commit.
+            const mio = previos.data.find(c => c.body.includes(marca));
+            if (mio) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: mio.id,
+                body: cuerpo,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: cuerpo,
+              });
+            }
