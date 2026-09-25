@@ -9,10 +9,27 @@ La convencion concreta de este repositorio esta en [`docs/VERSIONADO.md`](docs/V
 ## [Sin publicar]
 
 ### Pendiente
-- Borrar los diez flujos heredados de Google, que fallan en cada push.
 - Flujo de GitHub Actions que corra `terraform plan` en cada PR.
 - Proteger `main` contra `push --force`.
 - Publicar nuestras imagenes en GHCR y apuntar los manifiestos a ellas.
+
+## [1.3.1] - 2026-09-25
+
+### Quitado
+- Los diez flujos de GitHub Actions heredados del repositorio de Google:
+  `ci-main`, `ci-pr`, `cleanup`, `deploy-pr`, `helm-chart-ci`,
+  `kubevious-manifests-ci`, `kustomize-build-ci`, `make-release`,
+  `terraform-validate-ci` y el `README.md` de esa carpeta.
+
+Estaban escritos para la infraestructura de Google —su proyecto de GCP, sus
+secretos, su registro de imagenes— y fallaban en cada push desde el primer dia.
+Un CI permanentemente en rojo deja de avisar de nada: cuando todo falla siempre,
+nadie mira si algo empezo a fallar. Se van juntos porque comparten una unica
+razon, y hay que quitarlos antes de anadir el nuestro para que el nuestro se
+distinga.
+
+Siguen en la historia: `git show v1.3.0:.github/workflows/ci-main.yaml` los
+recupera si alguna vez hace falta consultar como los tenia Google.
 
 ## [1.3.0] - 2026-09-25
 
@@ -169,7 +186,8 @@ aplicacion y no como un cambio de plataforma.
 - El nombre del bucket del estado esta escrito a fuego en `backend.tf`. En otra
   computadora hay que cambiarlo a mano; se arregla en la 1.1.0.
 
-[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v1.3.0...HEAD
+[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/branToRep/microservices-demo/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/branToRep/microservices-demo/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/branToRep/microservices-demo/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/branToRep/microservices-demo/compare/v1.1.0...v1.1.1
