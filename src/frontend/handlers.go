@@ -418,14 +418,8 @@ func (fe *frontendServer) assistantHandler(w http.ResponseWriter, r *http.Reques
 func (fe *frontendServer) logoutHandler(w http.ResponseWriter, r *http.Request) {
 	log := r.Context().Value(ctxKeyLog{}).(logrus.FieldLogger)
 	log.Debug("logging out")
-	// El /logout de siempre borra todas las cookies del navegador. Ahora
-	// ademas cierra la sesion en el servidor: si solo se borrara la cookie, el
-	// token seguiria siendo valido en Redis hasta caducar.
-	if token := authToken(r); token != "" {
-		if err := userSvc.logout(r.Context(), token); err != nil {
-			log.WithField("err", err).Warn("no se pudo cerrar la sesion en el servidor")
-		}
-	}
+	// Este /logout es el de Google: borra las cookies del navegador. Cerrar
+	// tambien la sesion en el servidor llega en la v3.0.0, con el userservice.
 	for _, c := range r.Cookies() {
 		c.Expires = time.Now().Add(-time.Hour * 24 * 365)
 		c.MaxAge = -1
@@ -565,8 +559,6 @@ func injectCommonTemplateData(r *http.Request, payload map[string]interface{}) m
 	data := map[string]interface{}{
 		"wishlists":         wishlists,
 		"wishlist_size":     wishlistSize,
-		"user":              currentUser(r),
-		"csrf_token":        csrfFromRequest(r),
 		"session_id":        sessionID(r),
 		"request_id":        r.Context().Value(ctxKeyRequestID{}),
 		"user_currency":     currentCurrency(r),
