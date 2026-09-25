@@ -8,8 +8,29 @@ La convencion concreta de este repositorio esta en [`docs/VERSIONADO.md`](docs/V
 
 ## [Sin publicar]
 
+El objetivo del proyecto esta cumplido en la 2.0.0: configuracion versionada que
+otra persona puede levantar sin editar nada, y un ciclo de integracion y
+despliegue continuo que se demuestra en vivo. Lo que queda es producto, no
+plataforma, y se construye sobre un pipeline que ya funciona.
+
 ### Pendiente
-- Publicar nuestras imagenes en GHCR y apuntar los manifiestos a ellas.
+- **v2.1.0** (#62) — recuperar `src/userservice/schema.sql`.
+- **v2.2.0** (#63) — el `userservice` completo. Es el unico ticket que es
+  programar de verdad; el detalle heredado del plan original esta como lista de
+  comprobacion en ese issue.
+- **v2.3.0** (#64) — desplegarlo en el cluster, con su Postgres.
+- **v3.0.0** (#65) — el inicio de sesion. Restaura ademas el cableado que quito
+  la 1.5.1 (ADR 0017), asi que sera el diff mas grande del proyecto.
+
+### Mejoras posibles, no bloqueantes
+- Construir tambien las diez imagenes de Google, para no depender de su registro.
+  Hoy usamos las oficiales fijadas a `v0.10.6`; anadirlas a la matriz del
+  workflow es una linea. No se hace porque no hemos tocado ese codigo.
+- Activar la aprobacion manual del despliegue: el trabajo ya declara
+  `environment: produccion`; basta anadirle "Required reviewers" en los ajustes
+  del repositorio, sin tocar el workflow.
+- `apagar.sh --solo-nodos`, para bajar los nodos sin destruir el plano de
+  control cuando se va a volver el mismo dia.
 
 ## [2.0.0] - 2026-09-25
 
