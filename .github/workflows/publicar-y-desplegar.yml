@@ -166,10 +166,16 @@ jobs:
       - name: Resumen
         if: steps.aws.outputs.vivas == 'true'
         run: |
-          URL=$(kubectl get svc frontend-external -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
           {
             echo "### Desplegado"
             echo
             echo "Version \`${{ steps.ctx.outputs.sha }}\` corriendo en el cluster."
-            [ -n "$URL" ] && echo "La tienda: http://$URL"
+            echo
+            echo "La URL de la tienda NO sale de Kubernetes: el Service"
+            echo "frontend-external es NodePort y el balanceador lo declara"
+            echo "Terraform (infra/aws/modules/balanceador). Para verla:"
+            echo
+            echo '```bash'
+            echo "terraform -chdir=infra/aws/envs/dev output url_tienda"
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
