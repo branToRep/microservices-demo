@@ -11,6 +11,44 @@ La convencion concreta de este repositorio esta en [`docs/VERSIONADO.md`](docs/V
 ### Pendiente
 - Publicar nuestras imagenes en GHCR y apuntar los manifiestos a ellas.
 
+## [1.7.0] - 2026-09-25
+
+El `wishlistservice` empieza a correr en el cluster. **Todavia no se ve nada** en
+la tienda: el frontend desplegado sigue siendo la imagen publica de Google, que
+no sabe que existen las listas. Eso llega en la v2.0.0.
+
+Desplegar el servicio antes que su interfaz es deliberado: se puede comprobar
+aislado —que arranca, que habla con su Redis, que su sonda de salud responde—
+sin que un fallo se confunda con un fallo del frontend.
+
+### Cambiado
+- `kubernetes-manifests/kustomization.yaml` — **anade `wishlistservice.yaml`.**
+  Ese manifiesto existia desde el PR #31 pero nunca estuvo en esta lista, asi que
+  `kubectl apply -k` no lo aplicaba nunca: el archivo estaba en el repositorio y
+  el servicio no en el cluster. Nadie lo noto porque la tienda funcionaba — sin
+  listas de deseos, pero funcionaba.
+- `kubernetes-manifests/wishlistservice.yaml` — la imagen pasa de
+  `boutique/wishlistservice:local` (construida a mano, solo existia en el Docker
+  de un portatil) a `ghcr.io/brantorep/wishlistservice:main`, que publica el CI.
+  `imagePullPolicy` pasa a `Always`.
+
+### Sobre la etiqueta `:main` en el manifiesto
+Va `:main` y no un SHA a proposito. El manifiesto es el **suelo**: lo que se
+despliega en un `kubectl apply -k` desde cero. El despliegue continuo de la
+v2.0.0 apunta al SHA exacto con `kubectl set image`, que es lo que permite saber
+que version corre y volver atras.
+
+El precio es que un `apply -k` posterior a un despliegue devuelve el servicio a
+`:main`. Es aceptable mientras el entorno se destruya cada sesion; en un cluster
+permanente habria que fijar la imagen desde el CI con el transformador `images`
+de kustomize.
+
+### Requisito externo
+Los paquetes de GHCR nacen **privados**. Si `wishlistservice` sigue privado, los
+nodos no pueden descargarlo y el pod queda en `ImagePullBackOff` con un 401 que
+parece un problema de red. Hay que hacerlo publico una vez, y solo puede el dueno
+del paquete (`docs/IMAGENES-GHCR.md`).
+
 ## [1.6.0] - 2026-09-25
 
 **Primera version en la que GitHub *hace* algo.** Hasta ahora el CI opinaba
@@ -410,7 +448,8 @@ aplicacion y no como un cambio de plataforma.
 - El nombre del bucket del estado esta escrito a fuego en `backend.tf`. En otra
   computadora hay que cambiarlo a mano; se arregla en la 1.1.0.
 
-[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v1.6.0...HEAD
+[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/branToRep/microservices-demo/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/branToRep/microservices-demo/compare/v1.5.1...v1.6.0
 [1.5.1]: https://github.com/branToRep/microservices-demo/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/branToRep/microservices-demo/compare/v1.4.1...v1.5.0
