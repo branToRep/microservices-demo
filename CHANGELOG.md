@@ -11,6 +11,53 @@ La convencion concreta de este repositorio esta en [`docs/VERSIONADO.md`](docs/V
 ### Pendiente
 - Publicar nuestras imagenes en GHCR y apuntar los manifiestos a ellas.
 
+## [1.5.0] - 2026-09-25
+
+**Cierra la serie 1.x.** A partir de esta version, otra persona clona el
+repositorio y lo levanta sin editar ningun archivo del proyecto. Es el objetivo
+que se planteo al empezar, y aqui queda comprobado en lugar de supuesto.
+
+### Anadido
+- `docs/PRUEBA-CLON-LIMPIO.md` — el procedimiento de la prueba y su resultado.
+- `docs/proteccion-main.json` — la configuracion de proteccion de `main` como
+  archivo, para reaplicarla en cualquier sistema sin pelear con comillas.
+
+### Corregido
+- `scripts/aws/levantar.sh` y `scripts/aws/apagar.sh` — leian el nombre del
+  bucket con un `sed` que imprimia **todas** las coincidencias. Un `backend.hcl`
+  con la linea `bucket` duplicada metia un salto de linea dentro de la variable y
+  el script construia la ruta `s3://bucket\nbucket/`. Y lo peor era el mensaje:
+  culpaba a las credenciales del laboratorio, mandando a buscar al sitio
+  equivocado. Ahora cuentan las coincidencias antes de leerlas y dicen que pasa.
+- `docs/PROTECCION-RAMAS.md` — decia "documentada, no aplicada todavia". Ya esta
+  aplicada; se anota como, quien y el detalle del `name already protected`.
+- `.github/workflows/terraform-ci.yml` — se le quita el filtro `paths`. El flujo
+  es un check **requerido** en la proteccion de `main`, y un check requerido que
+  no corre no queda "no aplicable": queda **pendiente**, y bloquea la fusion para
+  siempre. Con `paths: infra/**`, cualquier PR que solo tocara documentacion o
+  scripts era imposible de fusionar, y el mensaje de GitHub ("the base branch
+  policy prohibits the merge") no dice por que. Lo descubrio este mismo PR al
+  intentar fusionarse. La regla que queda: **un check requerido corre en todos
+  los PR.**
+
+### La prueba
+
+Un clon nuevo, un bucket de estado propio, y un solo archivo escrito a mano
+(`backend.hcl`, dos lineas). Los cinco puntos pasaron. El que importa es el
+tercero: **`git status --short` salio completamente vacio** — ningun `.tf`
+modificado. Si hubiera hecho falta editar codigo para levantarlo, la etiqueta
+dejaria de significar lo que dice y todo el versionado seria decorativo.
+
+La prueba encontro los dos defectos de arriba, ninguno visible desde la carpeta
+de trabajo original. Es el mismo patron de la 1.4.0, donde el CI nuevo encontro
+cinco archivos mal formateados en su propio PR: cada mecanismo que se anade
+descubre un defecto real en su primer uso.
+
+De paso quedo confirmado que **el versionado del bucket de estado si esta
+activo** — la SCP del laboratorio no lo denego. Se vio al intentar borrar el
+bucket de la prueba: `aws s3 rm --recursive` no basta, hay que borrar todas las
+versiones.
+
 ## [1.4.1] - 2026-09-25
 
 ### Anadido
@@ -257,7 +304,8 @@ aplicacion y no como un cambio de plataforma.
 - El nombre del bucket del estado esta escrito a fuego en `backend.tf`. En otra
   computadora hay que cambiarlo a mano; se arregla en la 1.1.0.
 
-[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v1.4.1...HEAD
+[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/branToRep/microservices-demo/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/branToRep/microservices-demo/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/branToRep/microservices-demo/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/branToRep/microservices-demo/compare/v1.3.0...v1.3.1

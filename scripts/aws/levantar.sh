@@ -46,8 +46,20 @@ AYUDA
   exit 1
 fi
 
-BUCKET=$(sed -nE 's/^[[:space:]]*bucket[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$ENTORNO/backend.hcl")
-REGION=$(sed -nE 's/^[[:space:]]*region[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$ENTORNO/backend.hcl")
+# Una clave declarada dos veces daba antes un valor con salto de linea dentro,
+# y de ahi salian rutas como "s3://bucket\nbucket/". Se cuenta primero.
+leer_clave() {
+  local clave="$1" archivo="$2" n
+  n=$(grep -cE "^[[:space:]]*${clave}[[:space:]]*=" "$archivo" || true)
+  if [ "$n" -gt 1 ]; then
+    alto "backend.hcl declara '${clave}' $n veces. Deja una sola linea.
+       Miralo con:  grep -n '${clave}' $archivo"
+  fi
+  sed -nE "s/^[[:space:]]*${clave}[[:space:]]*=[[:space:]]*\"([^\"]+)\".*/\\1/p" "$archivo" | head -1
+}
+
+BUCKET=$(leer_clave bucket "$ENTORNO/backend.hcl")
+REGION=$(leer_clave region "$ENTORNO/backend.hcl")
 REGION="${REGION:-us-east-1}"
 
 [ -n "$BUCKET" ] || alto "backend.hcl no declara ningun bucket."

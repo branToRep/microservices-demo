@@ -40,8 +40,16 @@ paso "1/5  Comprobaciones"
 
 [ -f "$ENTORNO/backend.hcl" ] || alto "No existe $ENTORNO/backend.hcl. Corre primero levantar.sh."
 
-BUCKET=$(sed -nE 's/^[[:space:]]*bucket[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$ENTORNO/backend.hcl")
-REGION=$(sed -nE 's/^[[:space:]]*region[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$ENTORNO/backend.hcl")
+# Igual que en levantar.sh: una clave repetida metia un salto de linea en el valor.
+leer_clave() {
+  local clave="$1" archivo="$2" n
+  n=$(grep -cE "^[[:space:]]*${clave}[[:space:]]*=" "$archivo" || true)
+  [ "$n" -gt 1 ] && alto "backend.hcl declara '${clave}' $n veces. Deja una sola linea."
+  sed -nE "s/^[[:space:]]*${clave}[[:space:]]*=[[:space:]]*\"([^\"]+)\".*/\\1/p" "$archivo" | head -1
+}
+
+BUCKET=$(leer_clave bucket "$ENTORNO/backend.hcl")
+REGION=$(leer_clave region "$ENTORNO/backend.hcl")
 REGION="${REGION:-us-east-1}"
 
 aws s3 ls "s3://$BUCKET/" >/dev/null 2>&1 || alto "No puedo leer s3://$BUCKET/.
