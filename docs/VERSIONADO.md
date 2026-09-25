@@ -104,6 +104,7 @@ Cada ticket quita un obstáculo concreto.
 | **v1.4.0** | CI de Terraform | `.github/workflows/terraform-ci.yml` (nuevo) | `fmt`, `validate` y `plan` en cada PR |
 | **v1.4.1** | Proteger main | `docs/PROTECCION-RAMAS.md` (nuevo) | sin `push --force`, sin borrar main |
 | **v1.5.0** | Prueba en clon limpio | `docs/PRUEBA-CLON-LIMPIO.md` (nuevo) | **el hito**: alguien más lo levantó y quedó registrado |
+| **v1.5.1** | Compilar de verdad | `scripts/generar-protos.sh`, `genproto/` de los dos servicios, `main.go`, `handlers.go`, `header.html` | el código del repositorio compila; no lo hacía desde el PR #35 |
 
 De aquí en adelante se puede entregar. Lo que sigue añade producto.
 
@@ -126,7 +127,7 @@ cambia en la misma URL. Eso es lo que hay que enseñar en la defensa.
 | **v2.1.0** | Esquema de usuarios | `src/userservice/schema.sql` | se recupera la rama `feat/user-database-schema`, que sigue sin fusionar |
 | **v2.2.0** | Servicio de usuarios | `src/userservice/` (resto), `protos/user.proto` | el servicio existe en el repositorio |
 | **v2.3.0** | Desplegar userservice | `kubernetes-manifests/userservice.yaml`, `postgres.yaml` (nuevos), `kustomization.yaml` | corre en el clúster |
-| **v3.0.0** | Inicio de sesión | `kubernetes-manifests/frontend.yaml` | **MAYOR**: la misma URL ahora permite registrarse |
+| **v3.0.0** | Inicio de sesión | `auth.go`, `merge.go`, las 3 plantillas, `main.go`, `handlers.go`, `header.html`, `frontend.yaml` | **MAYOR**: la misma URL permite registrarse. Restaura además el cableado que quitó la v1.5.1 (ADR 0017): es el diff más grande del proyecto |
 
 ---
 

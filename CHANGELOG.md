@@ -11,6 +11,54 @@ La convencion concreta de este repositorio esta en [`docs/VERSIONADO.md`](docs/V
 ### Pendiente
 - Publicar nuestras imagenes en GHCR y apuntar los manifiestos a ellas.
 
+## [1.5.1] - 2026-09-25
+
+Esta version no anade funciones: **hace que el codigo compile**. Los dos defectos
+que arregla llevaban meses en `main`, revisados y fusionados, sin que nadie los
+viera — porque hasta ahora nada habia construido nuestro frontend. La tienda
+desplegada usa la imagen publica de Google.
+
+### Anadido
+- `scripts/generar-protos.sh` — genera el codigo Go de `protos/wishlist.proto`
+  corriendo `protoc` y los plugins **dentro de un contenedor**: solo hace falta
+  Docker, y las versiones del generador estan fijadas.
+- `src/frontend/genproto/wishlist.pb.go`, `wishlist_grpc.pb.go`
+- `src/wishlistservice/genproto/wishlist.pb.go`, `wishlist_grpc.pb.go`
+- ADR 0016 — por que el codigo generado se versiona.
+- ADR 0017 — por que el frontend va sin cuentas hasta la v3.0.0.
+
+### Corregido
+- **El codigo gRPC de wishlist no estaba en el repositorio** y ademas estaba en
+  el `.gitignore`. Los dos servicios importan un paquete `genproto` que no
+  existia; al frontend le faltaban doce tipos. Habia funcionado en local porque
+  las maquinas donde se escribio tenian ese directorio generado sin versionar.
+- **El frontend no compilaba desde el PR #35.** Ese PR metio el cableado de
+  cuentas de usuario sin la implementacion: ocho rutas, dos campos del struct, el
+  middleware `withUser` y cuatro llamadas a funciones que **nunca han existido en
+  la historia del repositorio** (`auth.go` y `merge.go` tienen cero commits). Se
+  quita el cableado; vuelve completo en la v3.0.0 (ADR 0017).
+
+### Cambiado
+- `.gitignore` — deja de ignorar `src/wishlistservice/genproto/`.
+- `src/frontend/main.go`, `handlers.go`, `templates/header.html` — 37 lineas
+  menos: fuera las rutas de cuentas, el menu de perfil y el boton "Entrar".
+
+### Lo que esto ensena
+
+Van cuatro mecanismos y cuatro defectos reales, cada uno encontrado en su primer
+uso:
+
+| Mecanismo | Que encontro |
+|---|---|
+| CI (1.4.0) | cinco `.tf` mal formateados desde la 1.0.0 |
+| Proteccion de `main` (1.4.1) | un check requerido que bloqueaba los PR que no lo disparaban |
+| Prueba en clon limpio (1.5.0) | un fallo de lectura y un mensaje de error que mentia |
+| Compilar de verdad (1.5.1) | el frontend roto desde el PR #35 |
+
+El ultimo es el mas contundente: codigo en `main`, revisado y fusionado, que no
+compilaba. Es el argumento de por que el despliegue continuo importa — no basta
+con versionar el codigo, hay que construirlo.
+
 ## [1.5.0] - 2026-09-25
 
 **Cierra la serie 1.x.** A partir de esta version, otra persona clona el
@@ -304,7 +352,8 @@ aplicacion y no como un cambio de plataforma.
 - El nombre del bucket del estado esta escrito a fuego en `backend.tf`. En otra
   computadora hay que cambiarlo a mano; se arregla en la 1.1.0.
 
-[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v1.5.0...HEAD
+[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v1.5.1...HEAD
+[1.5.1]: https://github.com/branToRep/microservices-demo/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/branToRep/microservices-demo/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/branToRep/microservices-demo/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/branToRep/microservices-demo/compare/v1.3.1...v1.4.0
