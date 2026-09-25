@@ -30,9 +30,21 @@ variable "crear_nat" {
 }
 
 variable "version_kubernetes" {
-  description = "Version de Kubernetes. null = la que EKS elija por defecto."
+  description = <<-EOT
+    Version de Kubernetes del plano de control.
+
+    FIJADA A PROPOSITO. Con null, EKS elige "la mas reciente de hoy", asi que la
+    misma etiqueta de Git daria un cluster distinto en seis meses. Eso rompe la
+    promesa del versionado.
+
+    1.34 y no 1.36: la version mas nueva tarda en tener todos los addons
+    estables, y la mas vieja se acerca al fin de soporte. Dos por detras de la
+    punta es el punto comodo.
+
+    Versiones que admite el laboratorio: 1.31 a 1.36.
+  EOT
   type        = string
-  default     = null
+  default     = "1.34"
 }
 
 variable "tipo_instancia" {

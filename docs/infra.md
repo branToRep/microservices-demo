@@ -2,7 +2,7 @@
 
 Qué hace cada archivo de `infra/`, por qué existe y qué se rompe si falta.
 
-Son 16 archivos de Terraform y un script, 598 líneas en total. Se ven muchos,
+Son 15 archivos `.tf`, dos de configuración y un script — 645 líneas en total. Se ven muchos,
 pero la estructura es sencilla: hay **un entorno** que no declara casi nada y
 **tres módulos** que hacen el trabajo. El entorno solo los cablea entre sí.
 
@@ -19,7 +19,8 @@ infra/aws/
 ├── envs/dev/                       EL ENTORNO — aquí se corre terraform
 │   ├── versions.tf                 qué versión de Terraform y del proveedor
 │   ├── providers.tf                cómo hablar con AWS + etiquetas automáticas
-│   ├── backend.tf                  dónde vive el estado
+│   ├── backend.tf                  dónde vive el estado (sin el nombre del bucket)
+│   ├── backend.hcl.ejemplo         plantilla: el bucket, que cambia por máquina
 │   ├── variables.tf                las perillas que se pueden girar
 │   ├── terraform.tfvars            cómo están giradas HOY
 │   ├── main.tf                     cablea los tres módulos
@@ -27,7 +28,7 @@ infra/aws/
 │
 └── modules/                        LAS PIEZAS — no se corren solas
     ├── red/                        VPC, subredes, rutas          (12 recursos)
-    ├── cluster/                    EKS, nodos, addons            ( 5 recursos)
+    ├── cluster/                    EKS, nodos, addons            ( 6 recursos)
     └── balanceador/                ELB y su grupo de seguridad   ( 3 recursos)
 ```
 
@@ -82,17 +83,15 @@ no está escrito en ningún lado — sale solo de las dependencias.**
 Fija las versiones. Nada más.
 
 ```hcl
-required_version = ">= 1.10"
+required_version = "~> 1.10"
 aws = { version = "~> 5.70" }
 ```
 
-El `>= 1.10` no es un capricho: `use_lockfile` en el backend de S3 (el bloqueo
-del estado sin DynamoDB) apareció en esa versión. Con Terraform 1.9 el
-`backend.tf` no funciona.
-
-> **Pendiente de la v1.1.0**: ese `>= 1.10` debería ser un rango cerrado
-> (`~> 1.10`). Tal como está, dentro de dos años alguien correrá Terraform 2.x
-> y no se parecerá en nada.
+`~> 1.10` significa «de 1.10 en adelante, pero por debajo de 2.0». El límite
+inferior no es capricho: `use_lockfile` en el backend de S3 (el bloqueo del
+estado sin DynamoDB) apareció en esa versión, y con Terraform 1.9 el `backend.tf`
+no funciona. El superior evita que dentro de dos años alguien corra Terraform 2.x
+y obtenga algo que no se parece a lo que promete la etiqueta.
 
 ### `envs/dev/providers.tf` — 13 líneas
 
@@ -114,13 +113,12 @@ distinguir de un vistazo lo que es nuestro de lo que dejó un experimento.
 
 ### `envs/dev/backend.tf` — 12 líneas
 
-Dónde vive el archivo de estado. **Este es el archivo más importante de todos**,
-y el que más problemas da.
+Dónde vive el archivo de estado. **Este es el archivo más importante de todos.**
 
 ```hcl
 backend "s3" {
-  bucket       = "boutique-tfstate-devops"
   key          = "dev/terraform.tfstate"
+  encrypt      = true
   use_lockfile = true
 }
 ```
@@ -130,10 +128,25 @@ no sabe que la VPC existe y trataría de crear otra. Vive en S3 y no en el disco
 para que dos personas no se pisen: `use_lockfile` pone un candado en el bucket
 mientras uno de los dos está aplicando.
 
-> **El bloqueo de reproducibilidad**: ese nombre de bucket está escrito a fuego,
-> y los nombres de bucket son únicos en todo AWS. Nadie más puede correr esto
-> sin editar el archivo. Se arregla en la v1.1.0 pasando a configuración parcial
-> (`terraform init -backend-config=backend.hcl`).
+Fíjate en lo que **no** aparece: el nombre del bucket ni la región. Los nombres
+de bucket son únicos en todo AWS, así que tenerlos aquí obligaba a cualquier otra
+persona a editar código antes de poder correr el proyecto — y en cuanto edita
+código, ya no está ejecutando la versión que dice la etiqueta. Se pasan al `init`
+desde un archivo que no se versiona:
+
+```bash
+cp backend.hcl.ejemplo backend.hcl     # y editas el nombre
+terraform init -backend-config=backend.hcl
+```
+
+Terraform llama a esto **configuración parcial**: el archivo declara *que* el
+estado va en S3, y lo que cambia de una máquina a otra se pasa por fuera.
+`backend.hcl.ejemplo` es la plantilla y sí se versiona; `backend.hcl` es el de
+cada quien y está en el `.gitignore`.
+
+El precio es que `terraform init` a secas ya no funciona: sin el
+`-backend-config`, Terraform pregunta el nombre del bucket por teclado. Eso lo
+resuelve `levantar.sh`.
 
 ### `envs/dev/variables.tf` — 60 líneas
 
@@ -146,7 +159,7 @@ ajustar y con qué valor por defecto.
 | `region` | `us-east-1` | el laboratorio solo permite esta y `us-west-2` |
 | `cidr_vpc` | `10.0.0.0/16` | rango de la red privada |
 | `crear_nat` | `false` | el interruptor de los ~33 USD/mes (ver ADR 0014) |
-| `version_kubernetes` | `null` | `null` = la que EKS elija |
+| `version_kubernetes` | `1.34` | fijada: con `null`, EKS elegiría otra en seis meses |
 | `tipo_instancia` | `t3.medium` | el laboratorio no pasa de `large` |
 | `numero_nodos` | `2` | poner a `0` apaga sin destruir |
 | `nodeport_frontend` | `30080` | **tiene que coincidir con el manifiesto** |
@@ -157,8 +170,10 @@ la que más duele si se desincroniza: si cambias el `nodePort` en
 puerto donde no escucha nadie, los nodos salen `OutOfService` y la tienda
 devuelve `000`. El síntoma no menciona el puerto por ninguna parte.
 
-> **Pendiente de la v1.1.0**: `version_kubernetes = null` significa «la que EKS
-> elija hoy». Dentro de seis meses eso es otra versión. Hay que fijarla.
+Sobre `version_kubernetes`: el laboratorio admite de 1.31 a 1.36, y está fijada
+en **1.34**. No la más nueva, porque los addons tardan en estabilizarse en ella;
+no la más vieja, porque se acerca al fin de soporte. Dos por detrás de la punta
+es el punto cómodo.
 
 ### `envs/dev/terraform.tfvars` — 4 líneas
 
@@ -249,7 +264,7 @@ Kubernetes descubre en qué subredes puede crear un ELB. Sin ella, un Service de
 tipo `LoadBalancer` se queda en `<pending>` para siempre y el error no dice
 por qué.
 
-### `modules/cluster/` — EKS (5 recursos)
+### `modules/cluster/` — EKS (6 recursos)
 
 | Archivo | Líneas | Contenido |
 |---|---|---|
@@ -362,6 +377,8 @@ guardar el estado antes de poder crear nada, incluido ese sitio.
 |---|---|---|
 | `*.tf` | **sí** | es el código |
 | `terraform.tfvars` | **sí** | configuración, no secretos; sin él nadie reproduce |
+| `backend.hcl.ejemplo` | **sí** | la plantilla del backend, con el bucket falso |
+| `backend.hcl` | no | el bucket real de cada máquina |
 | `.terraform.lock.hcl` | **sí** | fija las versiones exactas del proveedor, como `go.sum` |
 | `.terraform/` | no | 680 MB de binario descargado; se regenera con `init` |
 | `*.tfstate` | no | **contiene secretos en claro**; vive en S3 |
@@ -376,21 +393,27 @@ explícitas y un comentario que dice por qué.
 
 ## 7. Estado actual del entorno
 
-Hay un `errored.tfstate` en `envs/dev/`. Terraform lo escribe cuando una
-operación falla y además no consigue guardar el estado en el backend. Contiene
-lo que quedó vivo del `destroy` que falló:
+Destruido y limpio: `terraform state list` no devuelve nada y el `plan` dice
+**21 to add**. Ese 21 es el total real de los tres módulos (12 + 6 + 3); si
+alguna vez sale otro número, algo cambió y hay que entender qué.
 
-```
-module.red  aws_vpc      esta          ← la VPC que no se deja borrar
-module.red  aws_subnet   publica       ← sus dos subredes
-```
+### Los tres residuos que `destroy` no se lleva
 
-Es decir: **el clúster, los nodos y el balanceador ya están destruidos** — lo
-caro se fue. Solo quedan la VPC y sus subredes, que no cuestan nada pero ocupan
-una de las cinco VPC que AWS permite por región.
+Un `terraform destroy` borra lo que Terraform creó, y nada más. Kubernetes y EKS
+crean cosas por su cuenta dentro de la VPC, y esas se quedan bloqueando el
+borrado con `DependencyViolation`:
 
-El archivo no se borra hasta terminar esa limpieza: es el único registro fiel de
-lo que quedó pendiente.
+| Lo que queda | Quién lo creó | Cómo se ve |
+|---|---|---|
+| grupo de seguridad `k8s-elb-…` | el controlador de Kubernetes, para un Service de tipo LoadBalancer | sobrevive aunque el ELB ya no exista |
+| interfaz `aws-K8S-i-…` | el CNI, para dar IPs a los pods | queda en `available` si el nodo muere con pods encima |
+| grupo `eks-cluster-sg-…` | EKS mismo, al crear el clúster | debería irse con el clúster; a veces se rezaga |
+
+Los tres se borran con la CLI y eso **no** contradice la regla de *todo en
+Terraform*: Terraform gestiona lo que declara, y esto es basura que dejó otro
+sistema. `apagar.sh` los barre antes del `destroy` final, y sobre todo hace
+`kubectl delete` **antes** de tocar AWS: si los pods se van primero, el CNI
+devuelve sus interfaces solo y los otros dos casi nunca aparecen.
 
 ---
 

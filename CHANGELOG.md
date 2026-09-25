@@ -9,10 +9,65 @@ La convencion concreta de este repositorio esta en [`docs/VERSIONADO.md`](docs/V
 ## [Sin publicar]
 
 ### Pendiente
-- Publicar nuestras imagenes en GHCR y apuntar los manifiestos a ellas.
-- Configuracion parcial del backend (`backend.hcl`) para que el bucket del
-  estado no este escrito a fuego en el codigo.
+- `levantar.sh` y `apagar.sh`, para no depender de recordar cinco comandos.
+- Borrar los diez flujos heredados de Google, que fallan en cada push.
 - Flujo de GitHub Actions que corra `terraform plan` en cada PR.
+- Proteger `main` contra `push --force`.
+- Publicar nuestras imagenes en GHCR y apuntar los manifiestos a ellas.
+
+## [1.1.1] - 2026-09-25
+
+### Cambiado
+- `infra/aws/envs/dev/versions.tf` — `required_version` pasa de `>= 1.10` a
+  `~> 1.10`. Antes, cualquier version futura valia, incluida Terraform 2.x.
+- `infra/aws/envs/dev/variables.tf` — `version_kubernetes` deja de ser `null` y
+  se fija en **1.34**. Con `null`, EKS elegia "la mas reciente de hoy", asi que
+  la misma etiqueta de Git daba un cluster distinto seis meses despues. El
+  laboratorio admite de 1.31 a 1.36; 1.34 esta dos por detras de la punta,
+  donde los addons ya son estables y falta mucho para el fin de soporte.
+
+### Corregido
+- `docs/infra.md` y este archivo decian que el modulo `cluster` tiene 5
+  recursos. Son **6**: se paso por alto
+  `aws_vpc_security_group_ingress_rule.nodeports_desde_elb`, que entro con el
+  balanceador. El total de los tres modulos es **21**, no 20.
+- `docs/infra.md` — la seccion del backend describia el bucket escrito a fuego,
+  que dejo de ser verdad en la 1.1.0, y la del estado hablaba de un
+  `errored.tfstate` que ya no existe. En su lugar queda documentados los tres
+  residuos que `terraform destroy` no se lleva (el grupo de seguridad del ELB de
+  Kubernetes, las interfaces del CNI y el grupo de seguridad de EKS).
+
+## [1.1.0] - 2026-09-25
+
+### Cambiado
+- `infra/aws/envs/dev/backend.tf` — se le quitan `bucket` y `region`. El estado
+  sigue en S3, pero el nombre del bucket se pasa al `init`:
+  `terraform init -backend-config=backend.hcl`.
+
+### Anadido
+- `infra/aws/envs/dev/backend.hcl.ejemplo` — la plantilla que se copia a
+  `backend.hcl` y se edita. Esta si se versiona; `backend.hcl` no.
+- `.gitignore` — ignora `infra/aws/envs/dev/backend.hcl`.
+
+### Por que
+Los nombres de bucket de S3 son unicos en todo AWS. Mientras el nuestro estuvo
+escrito en `backend.tf`, nadie mas podia correr el proyecto sin editar codigo —
+y al editarlo dejaba de estar ejecutando la version que dice la etiqueta.
+**Primera version que otra persona puede levantar tal cual.**
+
+## [1.0.2] - 2026-09-24
+
+### Anadido
+- `docs/infra.md` — mapa de la infraestructura: que hace cada archivo de
+  `infra/`, como fluyen los datos entre los tres modulos, que se versiona y que
+  no, y desde que directorio se corre cada comando.
+
+## [1.0.1] - 2026-09-24
+
+### Anadido
+- `CHANGELOG.md` — este archivo.
+- `docs/VERSIONADO.md` — la convencion: una version por ticket, que numero sube
+  en cada caso, el camino completo de la 1.0.0 a la 3.0.0 y como se publica.
 
 ## [1.0.0] - 2026-09-23
 
@@ -29,7 +84,7 @@ aplicacion y no como un cambio de plataforma.
   subredes publicas y privadas, internet gateway y tablas de ruteo (12 recursos).
 - `infra/aws/modules/cluster/` — cluster de EKS y grupo de nodos administrado
   con capacidad SPOT, addons `vpc-cni`, `coredns` y `kube-proxy`, y la regla
-  que deja entrar el rango de NodePorts desde la VPC (5 recursos).
+  que deja entrar el rango de NodePorts desde la VPC (6 recursos).
 - `infra/aws/modules/balanceador/` — ELB clasico con su grupo de seguridad y el
   enganche al grupo de autoescalado de los nodos (3 recursos).
 - `infra/aws/envs/dev/` — el entorno que compone los tres modulos, con el estado
@@ -67,5 +122,9 @@ aplicacion y no como un cambio de plataforma.
 - El nombre del bucket del estado esta escrito a fuego en `backend.tf`. En otra
   computadora hay que cambiarlo a mano; se arregla en la 1.1.0.
 
-[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v1.0.0...HEAD
+[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/branToRep/microservices-demo/compare/v1.1.0...v1.1.1
+[1.1.0]: https://github.com/branToRep/microservices-demo/compare/v1.0.2...v1.1.0
+[1.0.2]: https://github.com/branToRep/microservices-demo/compare/v1.0.1...v1.0.2
+[1.0.1]: https://github.com/branToRep/microservices-demo/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/branToRep/microservices-demo/releases/tag/v1.0.0
