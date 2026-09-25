@@ -51,10 +51,15 @@ spec:
               - ALL
           privileged: false
           readOnlyRootFilesystem: true
-        # Imagen construida en local con el mismo nombre que usa docker-compose.
-        # En un cluster remoto hay que publicarla y cambiar esta linea.
-        image: boutique/wishlistservice:local
-        imagePullPolicy: IfNotPresent
+        # La construye y publica .github/workflows/publicar-imagenes.yml en cada
+        # push a main. Ver docs/IMAGENES-GHCR.md.
+        #
+        # Aqui va :main y no un SHA a proposito: es el suelo para un despliegue
+        # desde cero (kubectl apply -k). El despliegue continuo de la v2.0.0
+        # apunta al SHA exacto con "kubectl set image", que es lo que permite
+        # saber que version corre y volver atras.
+        image: ghcr.io/brantorep/wishlistservice:main
+        imagePullPolicy: Always
         ports:
         - containerPort: 8080
         env:
