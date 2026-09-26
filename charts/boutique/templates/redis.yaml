@@ -1,0 +1,71 @@
+{{/*
+Los dos Redis: uno del carrito (de Google) y uno de las listas (nuestro).
+Contenedor "redis", sonda TCP, y un emptyDir en /data porque el sistema de
+archivos raiz es de solo lectura. Sin volumen persistente a proposito.
+*/}}
+{{- range $r := .Values.redis }}
+{{- $ctx := dict "raiz" $ "nombre" $r.nombre }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $r.nombre }}
+  labels:
+    app: {{ $r.nombre }}
+    {{- include "boutique.etiquetas" $ctx | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ $r.nombre }}
+  template:
+    metadata:
+      labels:
+        app: {{ $r.nombre }}
+    spec:
+      securityContext:
+        {{- toYaml $.Values.seguridad.pod | nindent 8 }}
+      containers:
+        - name: redis
+          image: redis:alpine
+          securityContext:
+            {{- toYaml $.Values.seguridad.contenedor | nindent 12 }}
+          ports:
+            - containerPort: 6379
+          readinessProbe:
+            periodSeconds: 5
+            tcpSocket:
+              port: 6379
+          livenessProbe:
+            periodSeconds: 5
+            tcpSocket:
+              port: 6379
+          volumeMounts:
+            - name: datos
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 70m
+              memory: {{ $r.memoria }}
+            limits:
+              cpu: 125m
+              memory: {{ $r.memoriaMax }}
+      volumes:
+        - name: datos
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $r.nombre }}
+  labels:
+    app: {{ $r.nombre }}
+    {{- include "boutique.etiquetas" $ctx | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ $r.nombre }}
+  ports:
+    - name: tcp-redis
+      port: 6379
+      targetPort: 6379
+{{- end }}

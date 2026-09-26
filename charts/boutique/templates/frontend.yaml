@@ -1,0 +1,117 @@
+{{/*
+---------------------------------------------------------------------------
+El frontend, aparte de la plantilla del bucle por dos razones:
+
+  1. Su sonda es HTTP (/_healthz con una cookie), no gRPC.
+  2. Necesita DOS Service: uno interno para el loadgenerator y otro con
+     NodePort FIJO al que apunta el balanceador de Terraform.
+
+Ese nodePort tiene que coincidir con var.nodeport_frontend en
+infra/aws/envs/dev/variables.tf. Si se desincronizan, el balanceador comprueba
+un puerto donde no escucha nadie, los nodos salen OutOfService y la tienda
+devuelve 503 sin mencionar el puerto en ningun momento.
+---------------------------------------------------------------------------
+*/}}
+{{- $ctx := dict "raiz" $ "servicio" (dict "nombre" "frontend" "propia" true) "nombre" "frontend" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  labels:
+    app: frontend
+    {{- include "boutique.etiquetas" $ctx | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+      annotations:
+        sidecar.istio.io/rewriteAppHTTPProbers: "true"
+    spec:
+      serviceAccountName: frontend
+      securityContext:
+        {{- toYaml .Values.seguridad.pod | nindent 8 }}
+      containers:
+        - name: server
+          image: {{ include "boutique.imagen" $ctx }}
+          imagePullPolicy: Always
+          securityContext:
+            {{- toYaml .Values.seguridad.contenedor | nindent 12 }}
+          ports:
+            - containerPort: {{ .Values.frontend.puerto }}
+          env:
+            {{- range $k, $v := .Values.frontend.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          resources:
+            requests:
+              cpu: {{ .Values.frontend.cpu }}
+              memory: {{ .Values.frontend.memoria }}
+            limits:
+              cpu: {{ .Values.frontend.cpuMax }}
+              memory: {{ .Values.frontend.memoriaMax }}
+          {{/* La cookie evita que la sonda cree una sesion de compra nueva
+               en cada comprobacion. */}}
+          readinessProbe:
+            initialDelaySeconds: 10
+            httpGet:
+              path: /_healthz
+              port: {{ .Values.frontend.puerto }}
+              httpHeaders:
+                - name: Cookie
+                  value: "shop_session-id=x-readiness-probe"
+          livenessProbe:
+            initialDelaySeconds: 10
+            httpGet:
+              path: /_healthz
+              port: {{ .Values.frontend.puerto }}
+              httpHeaders:
+                - name: Cookie
+                  value: "shop_session-id=x-liveness-probe"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  labels:
+    app: frontend
+    {{- include "boutique.etiquetas" $ctx | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app: frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: {{ .Values.frontend.puerto }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-external
+  labels:
+    app: frontend
+    {{- include "boutique.etiquetas" $ctx | nindent 4 }}
+spec:
+  {{/* NodePort y no LoadBalancer: el controlador de nube del laboratorio no
+       tiene permisos para gestionar ELBs (ver el ADR 0015). El balanceador lo
+       declara Terraform y apunta a este puerto fijo. */}}
+  type: NodePort
+  selector:
+    app: frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: {{ .Values.frontend.puerto }}
+      nodePort: {{ .Values.frontend.nodePort }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: frontend
+  labels:
+    {{- include "boutique.etiquetas" $ctx | nindent 4 }}
