@@ -9,6 +9,25 @@ accidentes invisibles: un `.terraform/` ya descargado, un `backend.hcl` que
 alguien creó hace semanas, un kubeconfig apuntando al sitio correcto. La prueba
 consiste en quitar todos esos accidentes.
 
+## Cambio desde la v2.2.0: ahora hace falta Helm
+
+Esta prueba se ejecutó contra la v1.4.1, cuando `kubectl apply -k` no exigía
+ninguna herramienta extra. Desde la **v2.2.0** el despliegue usa un chart de Helm
+(ADR 0018), así que el procedimiento tiene un requisito más:
+
+```bash
+brew install helm        # o el equivalente del sistema
+```
+
+`levantar.sh` lo comprueba y se detiene con un mensaje claro si falta. Es una
+concesión real: la promesa de la serie 1.x era «clona y levanta», y ahora son
+«clona, instala Helm y levanta». Se acepta porque la rúbrica exige el chart y
+porque todo el ecosistema que viene después (Vault) se distribuye como charts.
+
+**Pendiente**: repetir la prueba con el chart, para que el resultado de abajo
+siga siendo cierto. Lo que no cambia es el punto 3 —ningún `.tf` se edita—, que
+es el que sostiene el versionado.
+
 ## Qué se prueba, exactamente
 
 | | Debe cumplirse |

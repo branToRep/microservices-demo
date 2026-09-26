@@ -1,0 +1,20 @@
+apiVersion: v2
+name: boutique
+description: >-
+  Online Boutique con listas de deseos. Chart propio, escrito para este
+  proyecto: no es el helm-chart/ que trae el repositorio de Google.
+type: application
+
+# Lo pedia "helm lint" como recomendacion. Es el logo que trae el repositorio.
+icon: https://raw.githubusercontent.com/GoogleCloudPlatform/microservices-demo/main/src/frontend/static/icons/Hipster_HeroLogoMaroon.svg
+
+# version    = la del chart (su empaquetado)
+# appVersion = la de la aplicacion que despliega
+#
+# Se mueven por separado a proposito: tocar una plantilla sube 'version' sin
+# que cambie el codigo desplegado.
+version: 1.0.0
+appVersion: "2.2.0"
+
+maintainers:
+  - name: Equipo del proyecto

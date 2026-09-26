@@ -1,0 +1,62 @@
+{{/*
+Generador de carga: Locust, escrito en Python, golpeando la tienda desde dentro
+del cluster. Apagado por defecto, igual que venia comentado en el kustomization
+de Google — encenderlo cuesta CPU y no hace falta para que la tienda funcione.
+
+  helm upgrade --install boutique charts/boutique --set loadgenerator.activo=true
+
+El contenedor se llama "main" y no "server", a diferencia de los demas.
+*/}}
+{{- if .Values.loadgenerator.activo }}
+{{- $ctx := dict "raiz" $ "servicio" (dict "nombre" "loadgenerator") "nombre" "loadgenerator" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loadgenerator
+  labels:
+    app: loadgenerator
+    {{- include "boutique.etiquetas" $ctx | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: loadgenerator
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: loadgenerator
+      annotations:
+        sidecar.istio.io/rewriteAppHTTPProbers: "true"
+    spec:
+      serviceAccountName: loadgenerator
+      terminationGracePeriodSeconds: 5
+      restartPolicy: Always
+      securityContext:
+        {{- toYaml .Values.seguridad.pod | nindent 8 }}
+      containers:
+        - name: main
+          image: {{ include "boutique.imagen" $ctx }}
+          securityContext:
+            {{- toYaml .Values.seguridad.contenedor | nindent 12 }}
+          env:
+            - name: FRONTEND_ADDR
+              value: "frontend:80"
+            - name: USERS
+              value: {{ .Values.loadgenerator.usuarios | quote }}
+            - name: RATE
+              value: {{ .Values.loadgenerator.ritmo | quote }}
+          resources:
+            requests:
+              cpu: {{ .Values.loadgenerator.cpu }}
+              memory: {{ .Values.loadgenerator.memoria }}
+            limits:
+              cpu: {{ .Values.loadgenerator.cpuMax }}
+              memory: {{ .Values.loadgenerator.memoriaMax }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: loadgenerator
+  labels:
+    {{- include "boutique.etiquetas" $ctx | nindent 4 }}
+{{- end }}

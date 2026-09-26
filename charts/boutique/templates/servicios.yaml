@@ -1,0 +1,104 @@
+{{/*
+---------------------------------------------------------------------------
+Los diez servicios de forma identica, generados desde .Values.servicios.
+
+Esta plantilla ES el argumento para usar Helm en este proyecto. Con Kustomize
+eran diez archivos de unas noventa lineas cada uno, casi iguales, y cambiar algo
+comun (una etiqueta, un limite, la politica de descarga) significaba editar los
+diez. Aqui se edita una vez.
+---------------------------------------------------------------------------
+*/}}
+{{- range $s := .Values.servicios }}
+{{- $ctx := dict "raiz" $ "servicio" $s "nombre" $s.nombre }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $s.nombre }}
+  labels:
+    app: {{ $s.nombre }}
+    {{- include "boutique.etiquetas" $ctx | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ $s.nombre }}
+  template:
+    metadata:
+      labels:
+        app: {{ $s.nombre }}
+    spec:
+      serviceAccountName: {{ $s.nombre }}
+      terminationGracePeriodSeconds: 5
+      securityContext:
+        {{- toYaml $.Values.seguridad.pod | nindent 8 }}
+      containers:
+        - name: server
+          image: {{ include "boutique.imagen" $ctx }}
+          {{- if $s.propia }}
+          imagePullPolicy: Always
+          {{- end }}
+          securityContext:
+            {{- toYaml $.Values.seguridad.contenedor | nindent 12 }}
+          ports:
+            - containerPort: {{ $s.puerto }}
+          {{- with $s.env }}
+          env:
+            {{- range $k, $v := . }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          {{- end }}
+          resources:
+            requests:
+              cpu: {{ $s.cpu }}
+              memory: {{ $s.memoria }}
+            limits:
+              cpu: {{ $s.cpuMax }}
+              memory: {{ $s.memoriaMax }}
+          {{/* Todos registran grpc.health.v1, asi que la forma de la sonda es
+               la misma; los TIEMPOS no. Vienen de values.yaml, servicio por
+               servicio, tal como estaban en los manifiestos.
+
+               Homogeneizarlos fue un error que cazo la comparacion contra los
+               manifiestos: cuatro servicios no tenian initialDelaySeconds y les
+               puse 20, y tres tenian periodSeconds 5 y les puse 15. No rompia
+               nada, pero un chart debe reproducir lo que funciona. */}}
+          readinessProbe:
+            {{- with $s.sondaLectura }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            grpc:
+              port: {{ $s.puerto }}
+          livenessProbe:
+            {{- with $s.sondaVida }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            grpc:
+              port: {{ $s.puerto }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $s.nombre }}
+  labels:
+    app: {{ $s.nombre }}
+    {{- include "boutique.etiquetas" $ctx | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ $s.nombre }}
+  ports:
+    - name: grpc
+      {{/* El puerto del Service NO siempre es el del contenedor: emailservice
+           expone 5000 y escucha en 8080, y checkoutservice lo busca en
+           emailservice:5000. Asumir que coinciden rompia esa llamada. */}}
+      port: {{ $s.puertoServicio | default $s.puerto }}
+      targetPort: {{ $s.puerto }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $s.nombre }}
+  labels:
+    {{- include "boutique.etiquetas" $ctx | nindent 4 }}
+{{- end }}

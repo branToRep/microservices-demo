@@ -1,0 +1,223 @@
+# -----------------------------------------------------------------------------
+# Valores del chart.
+#
+# Lo que se cambia al desplegar es 'imagenes.etiqueta', que el pipeline pasa con
+# --set: es el SHA del commit, y es lo que permite saber que version corre.
+# -----------------------------------------------------------------------------
+
+imagenes:
+  # Nuestras dos imagenes. Las publica .github/workflows/publicar-y-desplegar.yml
+  nuestro:
+    registro: ghcr.io/brantorep
+    etiqueta: main
+  # Las diez de Google. No las construimos: no hemos tocado ese codigo.
+  google:
+    registro: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo
+    etiqueta: v0.10.6
+
+# Se aplica a todos los contenedores. runAsNonRoot y readOnlyRootFilesystem
+# vienen de los manifiestos de Google; no se relajan.
+seguridad:
+  pod:
+    fsGroup: 1000
+    runAsGroup: 1000
+    runAsNonRoot: true
+    runAsUser: 1000
+  contenedor:
+    allowPrivilegeEscalation: false
+    privileged: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+
+# -----------------------------------------------------------------------------
+# Los diez servicios de forma identica: Deployment + Service ClusterIP +
+# ServiceAccount, contenedor "server", sonda gRPC en su propio puerto.
+#
+# Esta lista ES el motivo de usar Helm. Con Kustomize eran diez archivos casi
+# iguales; aqui son diez entradas y una plantilla.
+#
+#   propia: true  -> la imagen sale de imagenes.nuestro
+# -----------------------------------------------------------------------------
+servicios:
+  - nombre: adservice
+    puerto: 9555
+    puertoServicio: 9555
+    sondaLectura: {initialDelaySeconds: 20, periodSeconds: 15}
+    sondaVida: {initialDelaySeconds: 20, periodSeconds: 15}
+    cpu: 200m
+    memoria: 180Mi
+    cpuMax: 300m
+    memoriaMax: 300Mi
+    env:
+      PORT: "9555"
+
+  - nombre: cartservice
+    puerto: 7070
+    sondaLectura: {initialDelaySeconds: 15}
+    sondaVida: {initialDelaySeconds: 15, periodSeconds: 10}
+    cpu: 200m
+    memoria: 64Mi
+    cpuMax: 300m
+    memoriaMax: 128Mi
+    env:
+      REDIS_ADDR: "redis-cart:6379"
+
+  - nombre: checkoutservice
+    puerto: 5050
+    sondaLectura: {}
+    sondaVida: {}
+    cpu: 100m
+    memoria: 64Mi
+    cpuMax: 200m
+    memoriaMax: 128Mi
+    env:
+      PORT: "5050"
+      PRODUCT_CATALOG_SERVICE_ADDR: "productcatalogservice:3550"
+      SHIPPING_SERVICE_ADDR: "shippingservice:50051"
+      PAYMENT_SERVICE_ADDR: "paymentservice:50051"
+      EMAIL_SERVICE_ADDR: "emailservice:5000"
+      CURRENCY_SERVICE_ADDR: "currencyservice:7000"
+      CART_SERVICE_ADDR: "cartservice:7070"
+
+  - nombre: currencyservice
+    puerto: 7000
+    sondaLectura: {}
+    sondaVida: {}
+    cpu: 100m
+    memoria: 64Mi
+    cpuMax: 200m
+    memoriaMax: 128Mi
+    env:
+      PORT: "7000"
+      DISABLE_PROFILER: "1"
+
+  - nombre: emailservice
+    puerto: 8080
+    puertoServicio: 5000
+    sondaLectura: {periodSeconds: 5}
+    sondaVida: {periodSeconds: 5}
+    cpu: 100m
+    memoria: 64Mi
+    cpuMax: 200m
+    memoriaMax: 128Mi
+    env:
+      PORT: "8080"
+      DISABLE_PROFILER: "1"
+
+  - nombre: paymentservice
+    puerto: 50051
+    sondaLectura: {}
+    sondaVida: {}
+    cpu: 100m
+    memoria: 64Mi
+    cpuMax: 200m
+    memoriaMax: 128Mi
+    env:
+      PORT: "50051"
+      DISABLE_PROFILER: "1"
+
+  - nombre: productcatalogservice
+    puerto: 3550
+    sondaLectura: {}
+    sondaVida: {}
+    cpu: 100m
+    memoria: 64Mi
+    cpuMax: 200m
+    memoriaMax: 128Mi
+    env:
+      PORT: "3550"
+      DISABLE_PROFILER: "1"
+
+  - nombre: recommendationservice
+    puerto: 8080
+    sondaLectura: {periodSeconds: 5}
+    sondaVida: {periodSeconds: 5}
+    cpu: 100m
+    memoria: 220Mi
+    cpuMax: 200m
+    memoriaMax: 450Mi
+    env:
+      PORT: "8080"
+      PRODUCT_CATALOG_SERVICE_ADDR: "productcatalogservice:3550"
+      DISABLE_PROFILER: "1"
+
+  - nombre: shippingservice
+    puerto: 50051
+    sondaLectura: {periodSeconds: 5}
+    sondaVida: {}
+    cpu: 100m
+    memoria: 64Mi
+    cpuMax: 200m
+    memoriaMax: 128Mi
+    env:
+      PORT: "50051"
+      DISABLE_PROFILER: "1"
+
+  - nombre: wishlistservice
+    propia: true            # <- nuestra, va a imagenes.nuestro
+    puerto: 8080
+    sondaLectura: {initialDelaySeconds: 5}
+    sondaVida: {initialDelaySeconds: 10, periodSeconds: 10}
+    cpu: 50m
+    memoria: 32Mi
+    cpuMax: 200m
+    memoriaMax: 128Mi
+    env:
+      PORT: "8080"
+      REDIS_ADDR: "redis-wishlist:6379"
+      WISHLIST_TTL_SECONDS: "172800"
+
+# -----------------------------------------------------------------------------
+# Los dos Redis. Sin volumen persistente a proposito: el carrito y las listas
+# son datos de demostracion, y las listas caducan a las 48 h de todos modos.
+# -----------------------------------------------------------------------------
+redis:
+  - nombre: redis-cart
+    memoria: 200Mi
+    memoriaMax: 256Mi
+  - nombre: redis-wishlist
+    memoria: 100Mi
+    memoriaMax: 200Mi
+
+# -----------------------------------------------------------------------------
+# El frontend. Aparte porque su sonda es HTTP, no gRPC, y porque necesita un
+# Service extra con NodePort FIJO: el balanceador que declara Terraform apunta
+# a ese numero. Si cambia aqui, hay que cambiarlo en
+# infra/aws/envs/dev/variables.tf, o el balanceador comprueba un puerto donde
+# no escucha nadie.
+# -----------------------------------------------------------------------------
+frontend:
+  puerto: 8080
+  nodePort: 30080
+  cpu: 100m
+  memoria: 64Mi
+  cpuMax: 200m
+  memoriaMax: 128Mi
+  env:
+    PORT: "8080"
+    PRODUCT_CATALOG_SERVICE_ADDR: "productcatalogservice:3550"
+    CURRENCY_SERVICE_ADDR: "currencyservice:7000"
+    CART_SERVICE_ADDR: "cartservice:7070"
+    RECOMMENDATION_SERVICE_ADDR: "recommendationservice:8080"
+    SHIPPING_SERVICE_ADDR: "shippingservice:50051"
+    CHECKOUT_SERVICE_ADDR: "checkoutservice:5050"
+    AD_SERVICE_ADDR: "adservice:9555"
+    # Ese servicio NO se despliega, pero main.go la lee con mustMapEnv, que
+    # entra en panico si falta. Quitarla impide que el frontend arranque.
+    SHOPPING_ASSISTANT_SERVICE_ADDR: "shoppingassistantservice:80"
+    WISHLIST_SERVICE_ADDR: "wishlistservice:8080"
+    ENABLE_PROFILER: "0"
+
+# -----------------------------------------------------------------------------
+# Generador de carga. Apagado por defecto, igual que lo traia Google comentado
+# en su kustomization. Encenderlo:  --set loadgenerator.activo=true
+# -----------------------------------------------------------------------------
+loadgenerator:
+  activo: false
+  usuarios: 10
+  ritmo: 1
+  cpu: 300m
+  memoria: 256Mi
+  cpuMax: 500m
+  memoriaMax: 512Mi

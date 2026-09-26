@@ -12,6 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# -----------------------------------------------------------------------------
+# ESTO YA NO ES EL CAMINO DE DESPLIEGUE.
+#
+# Desde la v2.2.0 la tienda se despliega con el chart de charts/boutique:
+#
+#     helm upgrade --install boutique charts/boutique
+#
+# Estos manifiestos se conservan porque son la referencia legible y la que se
+# puede comparar con el repositorio de Google (git diff contra upstream). El
+# chart se verifico generando exactamente los mismos 38 objetos.
+#
+# 'wishlistservice.yaml' se quito de la lista a proposito: con el dentro,
+# 'kubectl apply -k' desplegaria medio proyecto con la imagen equivocada y sin
+# que Helm se enterara.
+# -----------------------------------------------------------------------------
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
@@ -26,10 +41,6 @@ resources:
  - productcatalogservice.yaml
  - recommendationservice.yaml
  - shippingservice.yaml
- # Nuestro servicio. Existia desde el PR #31 pero nunca estuvo en esta lista,
- # asi que 'kubectl apply -k' no lo aplicaba: el archivo estaba en el
- # repositorio y el servicio no en el cluster.
- - wishlistservice.yaml
 # components:
 # - ../kustomize/components/cymbal-branding
 # - ../kustomize/components/google-cloud-operations

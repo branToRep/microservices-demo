@@ -115,18 +115,24 @@ case "$CONTEXTO" in
 esac
 
 # --------------------------------------------------------------------------
-paso "6/7  Desplegando la tienda"
+paso "6/7  Desplegando la tienda con Helm"
 cd "$RAIZ"
-kubectl apply -k kubernetes-manifests/
 
-echo "    esperando a que los despliegues esten disponibles..."
-kubectl wait --for=condition=available --timeout=420s deployment --all || {
+command -v helm >/dev/null || alto "Hace falta Helm. Instalalo con:  brew install helm
+       El despliegue usa el chart de charts/boutique desde la v2.2.0."
+
+# --atomic espera a que todo este listo y, si algo falla, revierte la release
+# entera. Sustituye al 'kubectl wait' de antes, que solo miraba y no arreglaba.
+helm upgrade --install boutique charts/boutique --atomic --timeout 8m || {
   echo
-  echo "Algun despliegue no arranco. Mira cual:"
+  echo "El despliegue no cuajo. Helm ya revirtio lo que hubiera. Mira cual fallo:"
   echo "  kubectl get pods"
   echo "  kubectl describe pod <el-que-falle>"
+  echo "  helm history boutique"
   exit 1
 }
+echo "    release desplegada:"
+helm list --filter '^boutique$' | sed 's/^/    /'
 
 # --------------------------------------------------------------------------
 paso "7/7  Esperando al balanceador"

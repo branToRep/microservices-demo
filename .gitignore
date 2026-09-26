@@ -55,3 +55,7 @@ crash.log
 # La configuracion del backend es de cada maquina (cada quien tiene su bucket).
 # Se versiona la plantilla backend.hcl.ejemplo, no el archivo real.
 infra/aws/envs/dev/backend.hcl
+
+# Salida de 'helm template', para comparar el chart contra los manifiestos.
+# Es un archivo de trabajo, no se versiona.
+revision-chart.yaml
