@@ -80,7 +80,15 @@ if [ -n "$CLUSTER" ] && aws eks describe-cluster --name "$CLUSTER" --region "$RE
     *":cluster/$CLUSTER")
       echo "    contexto: $CONTEXTO"
       cd "$RAIZ"
-      kubectl delete -k kubernetes-manifests/ --ignore-not-found=true --wait=true || true
+      # helm uninstall y no 'kubectl delete -k': desde la v2.2.0 el despliegue
+      # es una release de Helm. Borrar por el kustomization dejaria vivos los
+      # objetos que Helm creo y el registro de la release desincronizado.
+      if command -v helm >/dev/null && helm status boutique >/dev/null 2>&1; then
+        helm uninstall boutique --wait --timeout 5m || true
+      else
+        echo "    no hay release de Helm; pruebo con los manifiestos"
+        kubectl delete -k kubernetes-manifests/ --ignore-not-found=true --wait=true || true
+      fi
       cd "$ENTORNO"
       echo "    esperando a que el CNI devuelva las interfaces..."
       sleep 60

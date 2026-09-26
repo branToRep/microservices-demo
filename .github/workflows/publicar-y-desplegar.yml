@@ -118,6 +118,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+
       - id: ctx
         run: |
           echo "duenio=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
@@ -142,26 +146,24 @@ jobs:
         if: steps.aws.outputs.vivas == 'true'
         run: aws eks update-kubeconfig --region "$AWS_REGION" --name "$CLUSTER"
 
-      - name: Desplegar el SHA exacto
+      - name: Desplegar el SHA exacto con Helm
         if: steps.aws.outputs.vivas == 'true'
         run: |
-          IMG=ghcr.io/${{ steps.ctx.outputs.duenio }}
-          SHA=${{ steps.ctx.outputs.sha }}
+          # --atomic: si algo no queda listo en el plazo, Helm revierte TODA la
+          # release a la revision anterior y sale con error. Sustituye al par
+          # "rollout status" + "rollout undo" que habia antes, y es mejor: aquel
+          # revertia deployment por deployment, asi que un fallo a medias podia
+          # dejar el frontend nuevo hablando con un wishlistservice viejo.
+          #
+          # La etiqueta es el SHA del commit: es lo que permite saber que
+          # version corre y volver a otra.
+          helm upgrade --install boutique charts/boutique \
+            --set imagenes.nuestro.registro=ghcr.io/${{ steps.ctx.outputs.duenio }} \
+            --set imagenes.nuestro.etiqueta=${{ steps.ctx.outputs.sha }} \
+            --atomic --timeout 6m
 
-          kubectl set image deployment/frontend        server=$IMG/frontend:$SHA
-          kubectl set image deployment/wishlistservice server=$IMG/wishlistservice:$SHA
-
-          kubectl rollout status deployment/frontend        --timeout=240s
-          kubectl rollout status deployment/wishlistservice --timeout=240s
-
-      # Kubernetes mantiene los pods viejos hasta que los nuevos esten listos,
-      # asi que si el despliegue no cuaja la tienda sigue en pie. Esto devuelve
-      # el deployment a la revision anterior en vez de dejarlo a medias.
-      - name: Revertir si el despliegue fallo
-        if: failure() && steps.aws.outputs.vivas == 'true'
-        run: |
-          kubectl rollout undo deployment/frontend        || true
-          kubectl rollout undo deployment/wishlistservice || true
+          helm list
+          helm history boutique --max 5
 
       - name: Resumen
         if: steps.aws.outputs.vivas == 'true'
@@ -170,6 +172,8 @@ jobs:
             echo "### Desplegado"
             echo
             echo "Version \`${{ steps.ctx.outputs.sha }}\` corriendo en el cluster."
+            echo
+            echo "Revertir a la version anterior: \`helm rollback boutique\`"
             echo
             echo "La URL de la tienda NO sale de Kubernetes: el Service"
             echo "frontend-external es NodePort y el balanceador lo declara"
