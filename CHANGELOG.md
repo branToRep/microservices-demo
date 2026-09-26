@@ -32,6 +32,81 @@ plataforma, y se construye sobre un pipeline que ya funciona.
 - `apagar.sh --solo-nodos`, para bajar los nodos sin destruir el plano de
   control cuando se va a volver el mismo dia.
 
+## [2.2.0] - 2026-09-26
+
+El despliegue pasa de Kustomize a un **Helm Chart propio**, `charts/boutique/`.
+No es el `helm-chart/` que trae el repositorio de Google: ese tiene 2673 lineas,
+esta orientado a GCP y no conoce nuestro `wishlistservice`. El nuestro son 584.
+
+### Anadido
+- `charts/boutique/` — Chart.yaml, values.yaml y cinco plantillas.
+- `docs/adr/0018-helm-en-vez-de-kustomize.md`
+- `.github/workflows/terraform-ci.yml` — trabajo **Chart de Helm**: `lint`,
+  `template` y una comprobacion de que salen 38 objetos con `kind` y nombre. No
+  necesita credenciales, asi que es obligatorio como el formato de Terraform.
+
+### Cambiado
+- `.github/workflows/publicar-y-desplegar.yml` — `kubectl set image` pasa a
+  `helm upgrade --install --atomic`.
+- `scripts/aws/levantar.sh` — `kubectl apply -k` pasa a `helm upgrade --install`.
+  Comprueba que Helm este instalado y lo dice si falta.
+- `scripts/aws/apagar.sh` — `kubectl delete -k` pasa a `helm uninstall`. Con el
+  borrado por kustomization quedaban vivos los objetos que Helm creo.
+- `kubernetes-manifests/kustomization.yaml` — se quita `wishlistservice.yaml` y
+  se anade una cabecera diciendo que **esto ya no es el camino de despliegue**.
+  Los manifiestos se conservan: son la referencia legible y la que permite
+  `git diff` contra upstream.
+
+### Por que, si Kustomize funcionaba
+Dos razones, y la segunda pesa mas a largo plazo:
+
+1. **La rubrica** pide desplegar «mediante un Helm Chart personalizado».
+2. **Vault y lo que venga.** Vault, cert-manager, external-secrets, kyverno — todo
+   ese ecosistema se distribuye como charts. Con Kustomize habria que usar Helm
+   igual para ellos, o renderizarlos y congelar su version. Y `dependencies` en
+   `Chart.yaml` permite meter Vault como subchart apagable por bandera; Kustomize
+   no tiene ese concepto.
+
+Lo que el chart aporta por si mismo: diez de los catorce deployments tienen forma
+identica, asi que salen de **una** plantilla y diez entradas en `values.yaml`, en
+vez de diez archivos de noventa lineas casi iguales. Cambiar algo comun es una
+edicion y no diez.
+
+### Corregido durante la migracion
+`helm lint` paso y `helm template` renderizo sin errores. **Y eso no basta.** La
+comparacion objeto por objeto contra los manifiestos encontro **dos errores que
+habrian roto la tienda**, ninguno visible para el lint:
+
+- El Service de `emailservice` expone el puerto **5000** y escucha en 8080.
+  Asumir que coincidian dejaba a `checkoutservice` —que lo busca en
+  `emailservice:5000`— sin poder llamarlo.
+- Al frontend le faltaba `SHOPPING_ASSISTANT_SERVICE_ADDR`. Ese servicio no se
+  despliega, pero `main.go` la lee con `mustMapEnv`, que entra en panico si falta:
+  el frontend no habria arrancado.
+
+Mas dieciocho diferencias de tiempos de sonda, por homogeneizarlos cuando los
+manifiestos los tenian variados. Se corrigieron igual.
+
+Tras las correcciones, **cero diferencias en los 38 objetos**: imagenes, puertos
+de contenedor y de Service, variables, recursos, sondas con sus tiempos,
+serviceAccounts, securityContext y selectores.
+
+La leccion vale mas que el chart: **lo que encontro los errores fue comparar
+contra la verdad conocida, no validar contra un esquema.**
+
+### Lo que esta version cuesta
+Hace falta **Helm instalado**, y eso rompe parte de la promesa de la v1.5.0: antes
+`kubectl apply -k` no pedia nada extra. Queda anotado en
+`docs/PRUEBA-CLON-LIMPIO.md`, que habra que repetir.
+
+Ademas ya no se lee el YAML que se aplica, se leen plantillas — que es
+exactamente por donde se colaron los dos errores de arriba.
+
+A cambio, `--atomic` revierte la release **entera** si algo no cuaja. El
+`kubectl rollout undo` anterior revertia deployment por deployment, asi que un
+fallo a medias podia dejar el frontend nuevo hablando con un `wishlistservice`
+viejo.
+
 ## [2.0.0] - 2026-09-25
 
 **La tienda cambia, y nadie toca AWS.** Fusionas a `main`, GitHub construye la
@@ -528,7 +603,8 @@ aplicacion y no como un cambio de plataforma.
 - El nombre del bucket del estado esta escrito a fuego en `backend.tf`. En otra
   computadora hay que cambiarlo a mano; se arregla en la 1.1.0.
 
-[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v2.0.0...HEAD
+[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/branToRep/microservices-demo/compare/v2.1.0...v2.2.0
 [2.0.0]: https://github.com/branToRep/microservices-demo/compare/v1.7.0...v2.0.0
 [1.7.0]: https://github.com/branToRep/microservices-demo/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/branToRep/microservices-demo/compare/v1.5.1...v1.6.0
