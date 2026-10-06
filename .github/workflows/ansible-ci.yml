@@ -1,0 +1,52 @@
+# -----------------------------------------------------------------------------
+# Revisa los roles de Ansible en cada PR que los toque: ansible-lint y la
+# comprobacion de sintaxis del playbook. No necesita credenciales ni la maquina.
+#
+# Lleva filtro de rutas porque NO es un check requerido de main (ver el
+# comentario de terraform-ci.yml: un check requerido con filtro bloquea los PR
+# que no lo disparan).
+# -----------------------------------------------------------------------------
+name: Ansible CI
+
+on:
+  pull_request:
+    paths:
+      - 'infra/ansible/**'
+      - '.github/workflows/ansible-ci.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ansible-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  revisar:
+    name: ansible-lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/ansible
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar Ansible, ansible-lint y las colecciones
+        run: |
+          pip install -r requirements.txt "ansible-lint>=24.0,<27.0"
+          ansible-galaxy collection install -r requirements.yml
+
+      # -i localhost, : la sintaxis no necesita el inventario dinamico (que
+      # preguntaria a AWS).
+      - name: Sintaxis del playbook
+        run: ansible-playbook -i localhost, --syntax-check playbooks/vault.yml
+
+      # Rutas explicitas: sin ellas ansible-lint revisa todo el repositorio,
+      # manifiestos de Kubernetes y plantillas de Helm incluidos.
+      - name: ansible-lint
+        run: ansible-lint playbooks/ roles/

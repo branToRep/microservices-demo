@@ -6,16 +6,17 @@
 #   revisar  -> formato y sintaxis. NO necesita credenciales de AWS, asi que
 #               nunca falla por razones ajenas al codigo. Es el que decide si
 #               el PR se puede fusionar.
-#   plan     -> el plan de verdad contra AWS. Solo corre si hay credenciales en
-#               los secretos del repositorio, porque las del laboratorio
-#               caducan cada sesion. Informa, no bloquea.
+#   plan     -> el plan de verdad contra AWS. Solo corre si hay de donde sacar
+#               credenciales (Vault o los secretos del repositorio), porque las
+#               del laboratorio caducan cada sesion. Informa, no bloquea.
 #
 # Por que separarlos: un CI que falla porque nadie sincronizo las credenciales
 # de hoy es un CI que se aprende a ignorar. Lo que bloquea tiene que depender
 # solo del codigo.
 #
 # Para que corra el plan, al empezar cada sesion del laboratorio:
-#   ./scripts/aws/sincronizar-credenciales.sh
+#   ./scripts/vault/abrir.sh                     (Vault arranca sellado)
+#   ./scripts/aws/sincronizar-credenciales.sh    (las credenciales, a Vault)
 # y una sola vez, el nombre del bucket como variable del repositorio:
 #   gh variable set TF_BUCKET --body "boutique-tfstate-devops"
 # -----------------------------------------------------------------------------
@@ -44,9 +45,13 @@ concurrency:
 permissions:
   contents: read
   pull-requests: write
+  # Para pedirle a GitHub el token OIDC que se presenta a Vault.
+  id-token: write
 
 env:
   ENTORNO: infra/aws/envs/dev
+  # Los entornos que se validan. El plan solo se hace de dev.
+  ENTORNOS: infra/aws/envs/dev infra/aws/envs/vault
   VERSION_TERRAFORM: 1.16.3
 
 jobs:
@@ -67,24 +72,31 @@ jobs:
         run: terraform fmt -check -recursive infra/
 
       # -backend=false inicializa modulos y proveedor SIN conectarse a S3.
-      # Es lo que permite validar sin credenciales.
-      - name: terraform init (sin backend)
-        run: terraform -chdir=${{ env.ENTORNO }} init -backend=false -input=false
+      # Es lo que permite validar sin credenciales. Los dos entornos: dev y el
+      # de Vault, que vive aparte para que apagar.sh no lo destruya.
+      - name: terraform init + validate (sin backend)
+        run: |
+          for entorno in $ENTORNOS; do
+            echo "::group::$entorno"
+            terraform -chdir="$entorno" init -backend=false -input=false
+            terraform -chdir="$entorno" validate
+            echo "::endgroup::"
+          done
 
-      - name: terraform validate
-        run: terraform -chdir=${{ env.ENTORNO }} validate
-
+      # Que haya DE DONDE sacarlas: Vault configurado o los secretos de
+      # respaldo. Si Vault esta sellado y no hay respaldo, el plan lo dira.
       - name: Hay credenciales para el plan?
         id: credenciales
         env:
           LLAVE: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          VAULT: ${{ vars.VAULT_ADDR }}
           BUCKET: ${{ vars.TF_BUCKET }}
         run: |
-          if [ -n "$LLAVE" ] && [ -n "$BUCKET" ]; then
+          if { [ -n "$LLAVE" ] || [ -n "$VAULT" ]; } && [ -n "$BUCKET" ]; then
             echo "hay=true" >> "$GITHUB_OUTPUT"
           else
             echo "hay=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Sin credenciales o sin TF_BUCKET: me salto el plan."
+            echo "::notice::Sin Vault ni credenciales, o sin TF_BUCKET: me salto el plan."
           fi
 
   plan:
@@ -94,12 +106,26 @@ jobs:
     runs-on: ubuntu-latest
     # Informa, no bloquea: las credenciales del laboratorio caducan solas.
     continue-on-error: true
-    env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+
+      # Primero Vault (rol 'ci', cualquier rama de este repo); si no responde,
+      # los secretos AWS_*. Los PR desde un fork no reciben ni lo uno ni lo otro.
+      - name: Credenciales de AWS
+        id: aws
+        uses: ./.github/actions/credenciales-aws
+        with:
+          rol-vault: ci
+          vault-addr: ${{ vars.VAULT_ADDR }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+
+      - name: Sin credenciales no hay plan
+        if: steps.aws.outputs.origen == 'ninguno'
+        run: |
+          echo "::error::Vault no entrego credenciales y no hay secretos de respaldo. Abre Vault (./scripts/vault/abrir.sh) y sincroniza las credenciales."
+          exit 1
 
       - uses: hashicorp/setup-terraform@v3
         with:

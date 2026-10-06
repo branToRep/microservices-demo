@@ -29,8 +29,13 @@
 # La etiqueta con el SHA del commit es la que importa: identifica exactamente que
 # codigo corre y permite volver atras. La etiqueta :main es comodidad para mirar.
 #
-# NO necesita ningun secreto. El GITHUB_TOKEN que GitHub genera para cada
-# ejecucion basta, con el permiso `packages: write` de abajo.
+# Publicar NO necesita ningun secreto. El GITHUB_TOKEN que GitHub genera para
+# cada ejecucion basta, con el permiso `packages: write` de abajo.
+#
+# Desplegar SI necesita credenciales de AWS, y las pide a Vault por OIDC con el
+# rol 'despliegue', que solo acepta main y el entorno produccion (ver
+# .github/actions/credenciales-aws y docs/VAULT.md). Si Vault no responde, usa
+# los secretos AWS_* del repositorio como antes.
 # -----------------------------------------------------------------------------
 name: Publicar y desplegar
 
@@ -52,6 +57,8 @@ concurrency:
 permissions:
   contents: read
   packages: write
+  # Para pedirle a GitHub el token OIDC que se presenta a Vault.
+  id-token: write
 
 jobs:
   publicar:
@@ -110,13 +117,20 @@ jobs:
     runs-on: ubuntu-latest
     environment: produccion
     env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
       AWS_REGION: us-east-1
       CLUSTER: boutique
     steps:
       - uses: actions/checkout@v4
+
+      # Primero Vault (rol 'despliegue'); si no responde, los secretos AWS_*.
+      - name: Credenciales de AWS
+        uses: ./.github/actions/credenciales-aws
+        with:
+          rol-vault: despliegue
+          vault-addr: ${{ vars.VAULT_ADDR }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
 
       - uses: azure/setup-helm@v4
         with:
@@ -134,7 +148,7 @@ jobs:
         run: |
           if [ -z "$AWS_ACCESS_KEY_ID" ]; then
             echo "vivas=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Sin credenciales de AWS en los secretos. No despliego."
+            echo "::notice::Sin credenciales de AWS (ni Vault ni secretos). No despliego."
           elif aws eks describe-cluster --name "$CLUSTER" --region "$AWS_REGION" >/dev/null 2>&1; then
             echo "vivas=true" >> "$GITHUB_OUTPUT"
           else

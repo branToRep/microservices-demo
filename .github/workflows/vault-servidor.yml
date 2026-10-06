@@ -1,0 +1,138 @@
+# -----------------------------------------------------------------------------
+# Instala y configura el servidor de Vault con Ansible. Se lanza a mano:
+#   Actions > Servidor de Vault (Ansible) > Run workflow
+#
+# POR QUE DESDE GITHUB ACTIONS Y NO DESDE TU PC
+# Ansible no corre en Windows (solo en Linux o macOS, o en WSL). El runner de
+# GitHub es Linux, es igual para todo el equipo y deja registro de cada corrida.
+#
+# COMO LLEGA A LA MAQUINA SIN SSH
+# Por AWS Systems Manager (Session Manager): Ansible usa la conexion aws_ssm,
+# que entra con las credenciales de AWS y no necesita el puerto 22 ni conocer la
+# IP de nadie. Los archivos viajan por el bucket TF_BUCKET.
+#
+# QUE NO HACE
+# Inicializar ni abrir Vault: eso genera y usa las partes de la llave de Shamir,
+# que no pueden acabar en un log. Lo hace una persona: docs/VAULT.md.
+#
+# Requisitos: la maquina creada (terraform del entorno vault), la variable
+# TF_BUCKET y credenciales de AWS (de Vault si ya esta abierto; si no, de los
+# secretos AWS_*: ./scripts/aws/sincronizar-credenciales.sh --github).
+# -----------------------------------------------------------------------------
+name: Servidor de Vault (Ansible)
+
+on:
+  workflow_dispatch:
+    inputs:
+      solo_revisar:
+        description: Solo mostrar lo que cambiaria (--check --diff), sin tocar nada
+        type: boolean
+        default: false
+
+# Dos corridas a la vez sobre la misma maquina se pisarian.
+concurrency:
+  group: vault-servidor
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  ansible:
+    name: Ansible por Session Manager
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+      TF_BUCKET: ${{ vars.TF_BUCKET }}
+    defaults:
+      run:
+        working-directory: infra/ansible
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Credenciales de AWS
+        id: aws
+        uses: ./.github/actions/credenciales-aws
+        with:
+          rol-vault: ci
+          vault-addr: ${{ vars.VAULT_ADDR }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+
+      - name: Comprobar requisitos
+        env:
+          ORIGEN: ${{ steps.aws.outputs.origen }}
+        run: |
+          if [ "$ORIGEN" = "ninguno" ]; then
+            echo "::error::Sin credenciales de AWS. La primera vez: ./scripts/aws/sincronizar-credenciales.sh --github"
+            exit 1
+          fi
+          if [ -z "$TF_BUCKET" ]; then
+            echo "::error::Falta la variable TF_BUCKET (gh variable set TF_BUCKET --body <bucket>). Session Manager pasa los archivos por ese bucket."
+            exit 1
+          fi
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar Ansible y sus colecciones
+        run: |
+          pip install -r requirements.txt
+          ansible-galaxy collection install -r requirements.yml
+
+      # La conexion aws_ssm necesita el plugin de Session Manager de la CLI.
+      - name: Instalar el plugin de Session Manager
+        run: |
+          curl -sSfLo /tmp/session-manager-plugin.deb \
+            https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb
+          sudo dpkg -i /tmp/session-manager-plugin.deb
+          session-manager-plugin --version
+
+      - name: Encontrar la maquina de Vault
+        run: |
+          ansible-inventory --graph
+          if ! ansible-inventory --list | grep -q '"vault"'; then
+            echo "::error::No hay ninguna instancia encendida con Rol=vault. Creala con terraform en infra/aws/envs/vault, o arrancala si el laboratorio la detuvo."
+            exit 1
+          fi
+
+      - name: Correr el playbook
+        env:
+          REVISAR: ${{ inputs.solo_revisar }}
+        run: |
+          extra=()
+          [ "$REVISAR" = "true" ] && extra=(--check --diff)
+          ansible-playbook playbooks/vault.yml "${extra[@]}"
+
+      # La CA es PUBLICA: no es un secreto. Va como artefacto y en el resumen
+      # para versionarla en infra/vault/ca.pem.
+      - name: Comparar la CA con la versionada
+        if: hashFiles('infra/ansible/salida/ca.pem') != ''
+        run: |
+          if cmp -s salida/ca.pem ../vault/ca.pem; then
+            echo "La CA del servidor coincide con infra/vault/ca.pem." >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "### La CA del servidor NO esta versionada (o cambio)"
+              echo
+              echo "Descarga el artefacto **vault-ca**, copialo a \`infra/vault/ca.pem\` y abre un PR."
+              echo "Sin ese archivo los workflows no pueden verificar el TLS de Vault."
+              echo
+              echo '```'
+              cat salida/ca.pem
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::La CA del servidor no coincide con infra/vault/ca.pem. Mira el resumen."
+          fi
+
+      - name: Publicar la CA como artefacto
+        if: hashFiles('infra/ansible/salida/ca.pem') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: vault-ca
+          path: infra/ansible/salida/ca.pem

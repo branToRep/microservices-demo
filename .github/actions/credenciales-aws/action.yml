@@ -1,0 +1,108 @@
+# -----------------------------------------------------------------------------
+# Deja las credenciales de AWS en el entorno del trabajo. Las usan los tres
+# workflows que hablan con AWS.
+#
+# PRIMERO VAULT, por OIDC: GitHub firma un token que dice "soy el repositorio
+# X, rama Y, entorno Z"; Vault lo comprueba contra el rol pedido y devuelve un
+# token suyo de diez minutos con el que lee boutique/aws. GitHub no guarda
+# ninguna credencial de AWS ni ningun token de Vault.
+#
+# SI VAULT NO RESPONDE (sellado, apagado, todavia sin instalar), cae a los
+# secretos AWS_* del repositorio, si existen, y lo avisa. Es lo que permite el
+# arranque: el workflow que instala Vault no puede pedirle credenciales a un
+# Vault que aun no existe.
+#
+# El trabajo que la use necesita:
+#   permissions:
+#     id-token: write
+#
+# Salida 'origen': vault | secretos | ninguno
+# -----------------------------------------------------------------------------
+name: Credenciales de AWS
+description: Pide las credenciales de AWS a Vault por OIDC, con respaldo en los secretos del repositorio.
+
+inputs:
+  rol-vault:
+    description: Rol del metodo jwt de Vault (ci o despliegue).
+    required: true
+  vault-addr:
+    description: https://<ip>:8200. Vacio = no intentar Vault.
+    required: false
+    default: ""
+  aws-access-key-id:
+    description: Respaldo. secrets.AWS_ACCESS_KEY_ID
+    required: false
+    default: ""
+  aws-secret-access-key:
+    description: Respaldo. secrets.AWS_SECRET_ACCESS_KEY
+    required: false
+    default: ""
+  aws-session-token:
+    description: Respaldo. secrets.AWS_SESSION_TOKEN
+    required: false
+    default: ""
+
+outputs:
+  origen:
+    description: De donde salieron las credenciales.
+    value: ${{ steps.resultado.outputs.origen }}
+
+runs:
+  using: composite
+  steps:
+    # vault-action quiere la CA en base64. La CA es publica y esta versionada.
+    - id: ca
+      shell: bash
+      env:
+        VAULT_ADDR: ${{ inputs.vault-addr }}
+      run: |
+        if [ -n "$VAULT_ADDR" ] && [ -f infra/vault/ca.pem ]; then
+          echo "intentar=true" >> "$GITHUB_OUTPUT"
+          echo "ca=$(base64 -w0 infra/vault/ca.pem)" >> "$GITHUB_OUTPUT"
+        else
+          echo "intentar=false" >> "$GITHUB_OUTPUT"
+          echo "::notice::Sin VAULT_ADDR o sin infra/vault/ca.pem: no pregunto a Vault."
+        fi
+
+    - id: vault
+      if: steps.ca.outputs.intentar == 'true'
+      continue-on-error: true
+      uses: hashicorp/vault-action@v3
+      with:
+        url: ${{ inputs.vault-addr }}
+        caCertificate: ${{ steps.ca.outputs.ca }}
+        method: jwt
+        path: github-actions
+        role: ${{ inputs.rol-vault }}
+        # Tiene que coincidir con AUDIENCIA en scripts/vault/configurar.sh.
+        jwtGithubAudience: vault-boutique
+        exportEnv: true
+        secrets: |
+          boutique/data/aws access_key_id     | AWS_ACCESS_KEY_ID ;
+          boutique/data/aws secret_access_key | AWS_SECRET_ACCESS_KEY ;
+          boutique/data/aws session_token     | AWS_SESSION_TOKEN
+
+    - id: resultado
+      shell: bash
+      env:
+        RESULTADO_VAULT: ${{ steps.vault.outcome }}
+        RESPALDO_LLAVE: ${{ inputs.aws-access-key-id }}
+        RESPALDO_SECRETO: ${{ inputs.aws-secret-access-key }}
+        RESPALDO_SESION: ${{ inputs.aws-session-token }}
+      run: |
+        if [ "$RESULTADO_VAULT" = "success" ]; then
+          origen=vault
+        elif [ -n "$RESPALDO_LLAVE" ]; then
+          origen=secretos
+          {
+            echo "AWS_ACCESS_KEY_ID=$RESPALDO_LLAVE"
+            echo "AWS_SECRET_ACCESS_KEY=$RESPALDO_SECRETO"
+            echo "AWS_SESSION_TOKEN=$RESPALDO_SESION"
+          } >> "$GITHUB_ENV"
+          echo "::notice::Vault no entrego credenciales; uso los secretos AWS_* del repositorio."
+        else
+          origen=ninguno
+          echo "::notice::Sin credenciales de AWS: ni Vault ni secretos del repositorio."
+        fi
+        echo "origen=$origen" >> "$GITHUB_OUTPUT"
+        echo "Credenciales de AWS: $origen"
