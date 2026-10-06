@@ -6,7 +6,7 @@ galaxy_info:
   license: Apache-2.0
   min_ansible_version: "2.17"
   platforms:
-    # Probado para Amazon Linux 2023; el esquema de Galaxy no tiene esa
+    # Escrito para Amazon Linux 2023; el esquema de Galaxy no tiene esa
     # version para "Amazon", asi que se declara "all".
     - name: Amazon
       versions:
