@@ -13,6 +13,35 @@ otra persona puede levantar sin editar nada, y un ciclo de integracion y
 despliegue continuo que se demuestra en vivo. Lo que queda es producto, no
 plataforma, y se construye sobre un pipeline que ya funciona.
 
+### Anadido — seguridad: Vault, Ansible y OIDC (rama `feat/vault-ansible`)
+Las credenciales de AWS dejan de vivir en los secretos de GitHub: las guarda
+HashiCorp Vault y los workflows las piden con un token OIDC de diez minutos.
+Decisiones en `docs/adr/0019-vault-fuera-del-cluster.md`; pasos en `docs/VAULT.md`.
+
+- `infra/aws/envs/vault/` y `infra/aws/modules/vault/` — EC2 con Vault, IP
+  elastica, disco de datos aparte y un grupo de seguridad con **solo el 8200**
+  abierto (TLS). Sin el 22. Estado de Terraform propio: `apagar.sh` no lo toca.
+- `infra/ansible/` — roles `comun` (dependencias, parches de seguridad, sshd
+  apagado) y `vault` (instalacion, disco, CA y TLS propios, Raft). Se conecta
+  por Session Manager con el inventario dinamico `aws_ec2`.
+- `infra/vault/politicas/` — `ci-lectura`, `operador` y `admin`.
+- `scripts/vault/` — `inicializar.sh` (Shamir 5/3), `abrir.sh`,
+  `configurar.sh` (KV v2, politicas, OIDC de GitHub, userpass, auditoria) y
+  `crear-usuario.sh`.
+- `.github/actions/credenciales-aws/` — primero Vault por OIDC; si no responde,
+  los secretos `AWS_*`.
+- `.github/workflows/vault-servidor.yml` — corre Ansible a mano.
+- `.github/workflows/ansible-ci.yml` — `ansible-lint` en los PR que tocan
+  `infra/ansible/`.
+
+### Cambiado
+- `publicar-y-desplegar.yml` — el despliegue pide las credenciales a Vault (rol
+  `despliegue`: solo `main` y el entorno `produccion`).
+- `terraform-ci.yml` — valida tambien `envs/vault`; el plan pide las
+  credenciales a Vault (rol `ci`).
+- `scripts/aws/sincronizar-credenciales.sh` — escribe en Vault por defecto;
+  `--github` conserva el camino anterior para el arranque.
+
 ### Pendiente
 - **v2.1.0** (#62) — recuperar `src/userservice/schema.sql`.
 - **v2.2.0** (#63) — el `userservice` completo. Es el unico ticket que es
