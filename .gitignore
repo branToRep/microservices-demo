@@ -59,3 +59,18 @@ infra/aws/envs/dev/backend.hcl
 # Salida de 'helm template', para comparar el chart contra los manifiestos.
 # Es un archivo de trabajo, no se versiona.
 revision-chart.yaml
+
+# -----------------------------------------------------------------------------
+# Vault y Ansible
+# -----------------------------------------------------------------------------
+# Lo que Ansible trae de la maquina (la CA). La que vale es la copia revisada
+# en infra/vault/ca.pem.
+infra/ansible/salida/
+
+# El entorno de Vault versiona su configuracion y su lockfile, igual que dev.
+!infra/aws/envs/vault/terraform.tfvars
+!infra/aws/envs/vault/.terraform.lock.hcl
+
+# Por si alguien guarda la salida de 'vault operator init' dentro del repo.
+# NUNCA se versiona: son las llaves de Shamir y el token raiz.
+vault-init*.json
