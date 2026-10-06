@@ -1,0 +1,95 @@
+---
+# -----------------------------------------------------------------------------
+# TLS con una CA propia.
+#
+# POR QUE NO LET'S ENCRYPT: no hay dominio, solo una IP elastica, y validar
+# exigiria abrir el 80 o el 443. Una CA propia no necesita nada de eso. El
+# precio es que los clientes tienen que confiar en ella: por eso su certificado
+# (publico, no secreto) se versiona en infra/vault/ca.pem.
+#
+# La llave de la CA nunca sale de la maquina. Todo vive en el disco de datos,
+# asi que sobrevive si la instancia se reemplaza.
+#
+# Los modulos son idempotentes: solo regeneran si algo cambio (otra IP en el
+# certificado) o si esta por caducar.
+# -----------------------------------------------------------------------------
+- name: Llave privada de la CA
+  community.crypto.openssl_privatekey:
+    path: "{{ vault_dir_tls }}/ca.key"
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Solicitud de la CA
+  community.crypto.openssl_csr:
+    path: "{{ vault_dir_tls }}/ca.csr"
+    privatekey_path: "{{ vault_dir_tls }}/ca.key"
+    common_name: Boutique Vault CA
+    organization_name: Boutique DevOps
+    basic_constraints:
+      - CA:TRUE
+    basic_constraints_critical: true
+    key_usage:
+      - keyCertSign
+      - cRLSign
+    key_usage_critical: true
+    mode: "0644"
+
+- name: Certificado de la CA (autofirmado)
+  community.crypto.x509_certificate:
+    path: "{{ vault_dir_tls }}/ca.pem"
+    csr_path: "{{ vault_dir_tls }}/ca.csr"
+    privatekey_path: "{{ vault_dir_tls }}/ca.key"
+    provider: selfsigned
+    selfsigned_not_after: "+{{ vault_ca_dias }}d"
+    mode: "0644"
+
+- name: Llave privada del servidor
+  community.crypto.openssl_privatekey:
+    path: "{{ vault_dir_tls }}/vault.key"
+    owner: root
+    group: vault
+    mode: "0640"
+
+- name: Solicitud del servidor (con la IP elastica)
+  community.crypto.openssl_csr:
+    path: "{{ vault_dir_tls }}/vault.csr"
+    privatekey_path: "{{ vault_dir_tls }}/vault.key"
+    common_name: "{{ vault_ip_publica }}"
+    # La IP elastica para quien llega de fuera; 127.0.0.1 y localhost para la
+    # CLI de vault dentro de la propia maquina.
+    subject_alt_name:
+      - "IP:{{ vault_ip_publica }}"
+      - IP:127.0.0.1
+      - DNS:localhost
+    key_usage:
+      - digitalSignature
+      - keyEncipherment
+    extended_key_usage:
+      - serverAuth
+    mode: "0644"
+
+# Los modulos ignoran las fechas al decidir si regenerar (con fechas relativas
+# como "+365d" regenerarian en cada corrida). Asi que la caducidad se comprueba
+# aparte: si al certificado le quedan menos de 30 dias, se fuerza uno nuevo.
+- name: Comprobar si el certificado del servidor caduca pronto
+  community.crypto.x509_certificate_info:
+    path: "{{ vault_dir_tls }}/vault.pem"
+    valid_at:
+      en_30_dias: "+30d"
+  register: vault_certificado_actual
+  failed_when: false
+
+- name: Certificado del servidor, firmado por la CA
+  community.crypto.x509_certificate:
+    path: "{{ vault_dir_tls }}/vault.pem"
+    csr_path: "{{ vault_dir_tls }}/vault.csr"
+    provider: ownca
+    ownca_path: "{{ vault_dir_tls }}/ca.pem"
+    ownca_privatekey_path: "{{ vault_dir_tls }}/ca.key"
+    ownca_not_after: "+{{ vault_certificado_dias }}d"
+    force: "{{ vault_certificado_actual.valid_at.en_30_dias is defined and not vault_certificado_actual.valid_at.en_30_dias }}"
+    mode: "0644"
+  # Recargar (SIGHUP) cambia el certificado SIN sellar Vault. Reiniciar lo
+  # sellaria.
+  notify: Recargar vault

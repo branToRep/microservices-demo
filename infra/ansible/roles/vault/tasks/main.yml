@@ -1,0 +1,12 @@
+---
+- name: Instalar Vault
+  ansible.builtin.import_tasks: instalar.yml
+
+- name: Preparar el disco de datos
+  ansible.builtin.import_tasks: disco.yml
+
+- name: Crear la CA y el certificado TLS
+  ansible.builtin.import_tasks: tls.yml
+
+- name: Configurar y arrancar Vault
+  ansible.builtin.import_tasks: servicio.yml

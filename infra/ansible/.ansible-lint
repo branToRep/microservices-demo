@@ -1,0 +1,5 @@
+---
+# ansible-lint para los roles de este directorio (lo corre .github/workflows/ansible-ci.yml).
+profile: moderate
+exclude_paths:
+  - salida/

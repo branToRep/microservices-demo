@@ -1,0 +1,50 @@
+---
+# -----------------------------------------------------------------------------
+# El disco de datos (aws_ebs_volume.datos en Terraform).
+#
+# En las instancias Nitro el nombre /dev/sdf que pone Terraform no existe: el
+# kernel lo llama /dev/nvme1n1, o nvme2n1, segun el orden en que aparezca. Lo
+# unico estable es el id del volumen, que AWS expone en /dev/disk/by-id.
+# -----------------------------------------------------------------------------
+- name: Calcular la ruta estable del disco de datos
+  ansible.builtin.set_fact:
+    vault_dispositivo: "/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_{{ vault_volumen_datos | replace('-', '') }}"
+
+- name: Esperar a que el disco este conectado
+  ansible.builtin.wait_for:
+    path: "{{ vault_dispositivo }}"
+    timeout: 120
+
+# Solo formatea si el disco esta vacio. Si ya tiene un sistema de archivos (una
+# instancia nueva con el disco de antes), lo deja intacto: ahi estan los datos.
+- name: Dar formato al disco si esta vacio
+  community.general.filesystem:
+    dev: "{{ vault_dispositivo }}"
+    fstype: xfs
+
+- name: Montar el disco de datos
+  ansible.posix.mount:
+    path: "{{ vault_dir }}"
+    src: "{{ vault_dispositivo }}"
+    fstype: xfs
+    # nofail: si el disco faltara, la maquina arranca igual y se puede entrar
+    # por Session Manager a ver que paso, en vez de quedarse colgada.
+    opts: defaults,nofail
+    state: mounted
+
+- name: Crear los directorios de Vault en el disco de datos
+  ansible.builtin.file:
+    path: "{{ item.ruta }}"
+    state: directory
+    owner: "{{ item.duenio }}"
+    group: vault
+    mode: "0750"
+  loop:
+    - ruta: "{{ vault_dir }}"
+      duenio: root
+    - ruta: "{{ vault_dir_datos }}"
+      duenio: vault
+    - ruta: "{{ vault_dir_tls }}"
+      duenio: root
+    - ruta: "{{ vault_dir_auditoria }}"
+      duenio: vault

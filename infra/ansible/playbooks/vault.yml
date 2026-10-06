@@ -1,0 +1,22 @@
+---
+# -----------------------------------------------------------------------------
+# Deja la maquina de Vault lista para inicializar.
+#
+#   comun  -> paquetes base, parches de seguridad, sshd apagado
+#   vault  -> Vault instalado, disco de datos, CA y TLS propios, servicio arriba
+#
+# Lo que NO hace, a proposito: inicializar Vault ni abrirlo. 'vault operator
+# init' genera las cinco partes de la llave de Shamir y el token raiz; si lo
+# hiciera Ansible desde GitHub Actions, acabarian en los logs. Eso lo hace una
+# persona desde su PC: ver docs/VAULT.md.
+#
+# Se puede correr las veces que haga falta. Si nada cambio, no reinicia Vault
+# (reiniciarlo lo SELLA, y abrirlo otra vez exige tres partes de la llave).
+# -----------------------------------------------------------------------------
+- name: Servidor de Vault
+  hosts: vault
+  become: true
+
+  roles:
+    - role: comun
+    - role: vault

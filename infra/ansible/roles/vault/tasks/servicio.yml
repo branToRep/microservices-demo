@@ -1,0 +1,61 @@
+---
+- name: Escribir la configuracion de Vault
+  ansible.builtin.template:
+    src: vault.hcl.j2
+    dest: /etc/vault.d/vault.hcl
+    owner: vault
+    group: vault
+    mode: "0640"
+  # Un cambio aqui SI exige reiniciar, y reiniciar SELLA Vault: despues hay que
+  # abrirlo con tres partes de la llave (scripts/vault/abrir.sh).
+  notify: Reiniciar vault
+
+# La auditoria la activa scripts/vault/configurar.sh dentro de Vault. Aqui solo
+# se evita que el archivo crezca sin limite. Vault reabre el archivo con SIGHUP.
+- name: Rotar el log de auditoria
+  ansible.builtin.template:
+    src: logrotate-auditoria.j2
+    dest: /etc/logrotate.d/vault-auditoria
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Arrancar Vault y dejarlo activado al encender
+  ansible.builtin.systemd_service:
+    name: vault
+    enabled: true
+    state: started
+
+# Los reinicios y recargas pendientes se hacen AHORA, antes de comprobar.
+- name: Aplicar los cambios pendientes
+  ansible.builtin.meta: flush_handlers
+
+- name: Esperar a que Vault escuche en el 8200
+  ansible.builtin.wait_for:
+    port: 8200
+    timeout: 60
+
+# /v1/sys/health responde con un codigo distinto segun el estado, y todos son
+# validos aqui: 501 = sin inicializar, 503 = sellado, 200 = abierto.
+- name: Preguntar a Vault en que estado esta
+  ansible.builtin.uri:
+    url: https://127.0.0.1:8200/v1/sys/health
+    ca_path: "{{ vault_dir_tls }}/ca.pem"
+    status_code: [200, 429, 472, 473, 501, 503]
+  register: vault_salud
+
+- name: Contar el estado
+  ansible.builtin.debug:
+    msg: >-
+      Vault {{ vault_salud.json.version }} -
+      inicializado: {{ vault_salud.json.initialized }},
+      sellado: {{ vault_salud.json.sealed }}.
+      {{ 'Siguiente paso: scripts/vault/inicializar.sh desde tu PC.' if not vault_salud.json.initialized
+      else ('Siguiente paso: scripts/vault/abrir.sh (tres partes de la llave).' if vault_salud.json.sealed
+      else 'Listo.') }}
+
+- name: Traer el certificado PUBLICO de la CA
+  ansible.builtin.fetch:
+    src: "{{ vault_dir_tls }}/ca.pem"
+    dest: "{{ vault_ca_destino_local }}"
+    flat: true

@@ -1,0 +1,12 @@
+---
+# OJO: reiniciar SELLA Vault. Solo se dispara si cambia vault.hcl.
+- name: Reiniciar vault
+  ansible.builtin.systemd_service:
+    name: vault
+    state: restarted
+
+# SIGHUP: Vault relee los certificados y reabre el log de auditoria sin sellarse.
+- name: Recargar vault
+  ansible.builtin.systemd_service:
+    name: vault
+    state: reloaded

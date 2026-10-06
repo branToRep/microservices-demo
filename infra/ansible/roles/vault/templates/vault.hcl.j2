@@ -1,0 +1,32 @@
+# {{ ansible_managed }}
+# Lo escribe el rol de Ansible infra/ansible/roles/vault. Los cambios a mano se
+# pierden en la siguiente corrida.
+
+# La interfaz web, en https://{{ vault_ip_publica }}:8200/ui
+ui = true
+
+# Con almacenamiento Raft, HashiCorp recomienda desactivar mlock: Raft usa
+# archivos mapeados en memoria que mlock no maneja bien.
+disable_mlock = true
+
+cluster_name = "boutique"
+
+# Almacenamiento integrado (Raft), en el disco de datos. Un solo nodo: basta
+# para el laboratorio y no depende de ningun otro servicio.
+storage "raft" {
+  path    = "{{ vault_dir_datos }}"
+  node_id = "vault-1"
+}
+
+listener "tcp" {
+  address         = "0.0.0.0:8200"
+  cluster_address = "127.0.0.1:8201"
+
+  # TLS SIEMPRE: el 8200 esta abierto a internet y por aqui viajan tokens.
+  tls_cert_file   = "{{ vault_dir_tls }}/vault.pem"
+  tls_key_file    = "{{ vault_dir_tls }}/vault.key"
+  tls_min_version = "tls12"
+}
+
+api_addr     = "https://{{ vault_ip_publica }}:8200"
+cluster_addr = "https://127.0.0.1:8201"

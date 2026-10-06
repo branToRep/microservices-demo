@@ -1,0 +1,15 @@
+---
+# Paquetes que cualquier maquina del proyecto necesita.
+comun_paquetes:
+  - python3
+  - jq
+  - unzip
+  - tar
+  - dnf-automatic
+
+# Parches de seguridad automaticos cada dia (dnf-automatic, solo "security").
+comun_parches_automaticos: true
+
+# Apagar sshd. Nadie entra por SSH: el 22 esta cerrado y se usa Session Manager.
+# Un servicio que no se usa es superficie de ataque que sobra.
+comun_apagar_ssh: true

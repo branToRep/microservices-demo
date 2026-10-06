@@ -1,0 +1,6 @@
+# Lo que necesita la maquina DESDE la que se corre Ansible (el runner de GitHub
+# o tu WSL). En la maquina de Vault no hace falta nada de esto.
+#   pip install -r requirements.txt
+ansible-core>=2.17,<2.20
+boto3>=1.34
+botocore>=1.34

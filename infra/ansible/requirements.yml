@@ -1,0 +1,17 @@
+---
+# Colecciones de Ansible que usan los roles. Se instalan con:
+#   ansible-galaxy collection install -r requirements.yml
+collections:
+  # Inventario dinamico (aws_ec2) y la conexion por Session Manager (aws_ssm).
+  # aws_ssm vive en amazon.aws desde la 8.0; antes estaba en community.aws.
+  - name: amazon.aws
+    version: ">=9.0.0,<11.0.0"
+  # La CA y el certificado TLS de Vault.
+  - name: community.crypto
+    version: ">=2.20.0,<4.0.0"
+  # Formatear el disco de datos.
+  - name: community.general
+    version: ">=9.0.0,<12.0.0"
+  # Montarlo.
+  - name: ansible.posix
+    version: ">=1.5.0,<3.0.0"

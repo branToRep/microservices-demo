@@ -1,0 +1,37 @@
+---
+# -----------------------------------------------------------------------------
+# Inventario dinamico: pregunta a AWS que maquinas hay, en vez de escribir IPs a
+# mano. Encuentra la de Vault por sus etiquetas (las pone Terraform en
+# infra/aws/modules/vault) y la nombra por su id de instancia, que es lo que
+# necesita Session Manager para conectarse.
+#
+# Comprobar que la ve:
+#   ansible-inventory --graph
+# -----------------------------------------------------------------------------
+plugin: amazon.aws.aws_ec2
+
+regions:
+  - us-east-1
+
+filters:
+  tag:Proyecto: boutique
+  tag:Rol: vault
+  instance-state-name: running
+
+hostnames:
+  - instance-id
+
+groups:
+  vault: tags.Rol == 'vault'
+
+compose:
+  # Session Manager se conecta por id de instancia, no por IP.
+  ansible_host: instance_id
+  # La IP elastica: va en el certificado TLS y en api_addr.
+  ip_publica: public_ip_address
+  # El disco de datos, por el nombre con el que Terraform lo conecta.
+  volumen_datos: >-
+    block_device_mappings
+    | selectattr('device_name', 'equalto', '/dev/sdf')
+    | map(attribute='ebs.volume_id')
+    | first

@@ -1,0 +1,26 @@
+---
+# Version de Vault. Vacio = la ultima del repositorio de HashiCorp EN LA PRIMERA
+# instalacion; despues no se actualiza sola (state: present). Para fijarla o
+# subirla a proposito: vault_version: "1.20.4" (el numero del paquete rpm).
+vault_version: ""
+
+# Todo lo que Vault escribe vive en el disco de datos, montado aqui. Si la
+# instancia se reemplaza, se monta en la nueva y no se pierde nada.
+vault_dir: /srv/vault
+vault_dir_datos: "{{ vault_dir }}/raft"
+vault_dir_tls: "{{ vault_dir }}/tls"
+vault_dir_auditoria: "{{ vault_dir }}/auditoria"
+
+# Vienen del inventario dinamico (inventario/aws_ec2.yml).
+vault_ip_publica: "{{ ip_publica }}"
+vault_volumen_datos: "{{ volumen_datos }}"
+
+# Vigencia de la CA propia y del certificado del servidor, en dias. El del
+# servidor se renueva solo al volver a correr el playbook cuando le quedan
+# menos de 30 dias.
+vault_ca_dias: 1825
+vault_certificado_dias: 365
+
+# A donde se trae la CA publica al terminar, en la maquina que corre Ansible.
+# Es el archivo que despues se versiona como infra/vault/ca.pem.
+vault_ca_destino_local: "{{ playbook_dir }}/../salida/ca.pem"

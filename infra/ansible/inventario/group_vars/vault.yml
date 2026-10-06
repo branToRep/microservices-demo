@@ -1,0 +1,13 @@
+---
+# -----------------------------------------------------------------------------
+# Como se conecta Ansible a la maquina de Vault: por AWS Systems Manager, sin
+# SSH. El puerto 22 esta cerrado en el grupo de seguridad y sshd apagado.
+#
+# Session Manager pasa los archivos por un bucket de S3. Se reutiliza el del
+# estado de Terraform (TF_BUCKET): Ansible sube lo que necesita y lo borra al
+# terminar.
+# -----------------------------------------------------------------------------
+ansible_connection: amazon.aws.aws_ssm
+ansible_aws_ssm_region: us-east-1
+ansible_aws_ssm_bucket_name: "{{ lookup('ansible.builtin.env', 'TF_BUCKET') }}"
+ansible_python_interpreter: /usr/bin/python3

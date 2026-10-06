@@ -1,0 +1,16 @@
+---
+# Se descarga el .repo OFICIAL de HashiCorp en vez de escribir la URL a mano: es
+# el que sabe que ruta corresponde a Amazon Linux, y si HashiCorp la cambia, no
+# hay que tocar este rol.
+- name: Anadir el repositorio de paquetes de HashiCorp
+  ansible.builtin.get_url:
+    url: https://rpm.releases.hashicorp.com/AmazonLinux/hashicorp.repo
+    dest: /etc/yum.repos.d/hashicorp.repo
+    mode: "0644"
+
+- name: Instalar Vault y lo que necesitan los modulos de certificados
+  ansible.builtin.dnf:
+    name:
+      - "{{ 'vault-' ~ vault_version if vault_version | length > 0 else 'vault' }}"
+      - python3-cryptography
+    state: present

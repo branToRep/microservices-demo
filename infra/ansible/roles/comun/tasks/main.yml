@@ -1,0 +1,47 @@
+---
+# -----------------------------------------------------------------------------
+# Lo basico de cualquier maquina: dependencias, parches y nada encendido que no
+# haga falta. Pensado para Amazon Linux 2023 (dnf).
+# -----------------------------------------------------------------------------
+- name: Instalar las dependencias base
+  ansible.builtin.dnf:
+    name: "{{ comun_paquetes }}"
+    state: present
+
+# 'latest' a proposito, y solo con los parches marcados como de seguridad: es
+# exactamente lo que se quiere en una maquina que guarda secretos.
+- name: Aplicar los parches de seguridad pendientes
+  ansible.builtin.dnf:
+    name: "*"
+    state: latest # noqa: package-latest
+    security: true
+    update_only: true
+
+- name: Parches de seguridad automaticos (solo seguridad, y aplicarlos)
+  when: comun_parches_automaticos
+  block:
+    - name: Configurar dnf-automatic
+      community.general.ini_file:
+        path: /etc/dnf/automatic.conf
+        section: commands
+        option: "{{ item.opcion }}"
+        value: "{{ item.valor }}"
+        mode: "0644"
+      loop:
+        - opcion: upgrade_type
+          valor: security
+        - opcion: apply_updates
+          valor: "yes"
+
+    - name: Activar el temporizador de dnf-automatic
+      ansible.builtin.systemd_service:
+        name: dnf-automatic.timer
+        enabled: true
+        state: started
+
+- name: Apagar sshd (se entra por Session Manager)
+  when: comun_apagar_ssh
+  ansible.builtin.systemd_service:
+    name: sshd
+    enabled: false
+    state: stopped
