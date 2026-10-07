@@ -32,6 +32,25 @@ plataforma, y se construye sobre un pipeline que ya funciona.
 - `apagar.sh --solo-nodos`, para bajar los nodos sin destruir el plano de
   control cuando se va a volver el mismo dia.
 
+## [2.2.1] - AAAA-MM-DD
+
+Primer paso de la **Fase III**: el diseno de la gestion de secretos, escrito
+antes de crear nada. No cambia infraestructura ni despliegue.
+
+### Anadido
+- `docs/adr/0019-flujo-de-secretos-con-vault.md` — que secreto migra a Vault (la
+  contrasena de `redis-cart`), donde vive Vault (una EC2 en su propio entorno de
+  Terraform y su propia VPC, fuera de lo que destruye `apagar.sh`) y como entra
+  el pipeline: con el **token OIDC de GitHub**, validado por Vault. GitHub no
+  guarda ninguna credencial de Vault, y una rama que no sea `main` no puede
+  leer el secreto.
+
+### Lo que esta version declara
+- Rotar la contrasena exige redesplegar: se lee en tiempo de despliegue.
+- El puerto 8200 queda abierto a internet; lo protegen TLS y la autenticacion.
+- El 22 se abre solo a la IP del operador, para Ansible. La lamina pedia
+  exclusivamente el 8200; la excepcion queda escrita en el ADR.
+
 ## [2.2.0] - 2026-09-26
 
 El despliegue pasa de Kustomize a un **Helm Chart propio**, `charts/boutique/`.
