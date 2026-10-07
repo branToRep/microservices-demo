@@ -13,6 +13,12 @@ otra persona puede levantar sin editar nada, y un ciclo de integracion y
 despliegue continuo que se demuestra en vivo. Lo que queda es producto, no
 plataforma, y se construye sobre un pipeline que ya funciona.
 
+### Fase III — seguridad (en curso, milestone M12)
+Vault + Ansible. Decisiones en `docs/adr/0019-vault-fuera-del-cluster.md`.
+
+- **#87** ADR 0019: Vault fuera del cluster, solo el 8200 con TLS, sin SSH y
+  GitHub por OIDC. Inventario y flujo de secretos (pasos 3 y 4 de la rubrica).
+
 ### Pendiente
 - **v2.1.0** (#62) — recuperar `src/userservice/schema.sql`.
 - **v2.2.0** (#63) — el `userservice` completo. Es el unico ticket que es
