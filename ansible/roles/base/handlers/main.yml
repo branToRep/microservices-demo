@@ -1,0 +1,10 @@
+---
+- name: Recargar las fuentes de chrony
+  ansible.builtin.command:
+    cmd: chronyc reload sources
+  changed_when: true
+
+- name: Recargar SSH
+  ansible.builtin.systemd_service:
+    name: ssh
+    state: reloaded

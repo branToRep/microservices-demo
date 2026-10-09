@@ -1,0 +1,39 @@
+---
+# -----------------------------------------------------------------------------
+# El playbook de la maquina de Vault.
+#
+# Dos jugadas. La primera pregunta a Terraform que maquina es y la mete en el
+# inventario; la segunda la configura. Asi no hay ningun id ni IP escrito a mano
+# en el repositorio, y destruir y recrear la maquina no exige editar nada.
+#
+# Requisitos: credenciales de AWS vigentes, 'terraform init' hecho en
+# infra/aws/envs/vault, y la maquina encendida.
+# -----------------------------------------------------------------------------
+
+- name: Descubrir la maquina de Vault desde Terraform
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Leer las salidas de infra/aws/envs/vault
+      ansible.builtin.command:
+        cmd: terraform output -json
+        chdir: "{{ playbook_dir }}/../infra/aws/envs/vault"
+      register: salidas_terraform
+      changed_when: false
+      # Solo lee. Sin esto, 'ansible-playbook --check' se salta el comando y la
+      # segunda jugada no tiene a quien configurar.
+      check_mode: false
+
+    - name: Anadir la maquina al inventario
+      ansible.builtin.add_host:
+        name: vault-boutique
+        groups: vault
+        ansible_host: "{{ (salidas_terraform.stdout | from_json).id_instancia.value }}"
+        ip_publica: "{{ (salidas_terraform.stdout | from_json).ip_publica.value }}"
+      changed_when: false
+
+- name: Configurar la maquina de Vault
+  hosts: vault
+  become: true
+  roles:
+    - base

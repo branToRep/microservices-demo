@@ -1,0 +1,20 @@
+---
+# Como entra Ansible a la maquina de Vault (ADR 0020).
+#
+# SSH normal, pero DENTRO de un tunel SSM: el grupo de seguridad no tiene regla
+# para el 22. Quien puede entrar lo deciden las credenciales de AWS, no la red.
+#
+# Va aqui y no en ~/.ssh/config para que el repositorio funcione igual en
+# cualquier maquina, sin pasos manuales fuera de el.
+region_aws: us-east-1
+
+ansible_user: ubuntu
+ansible_ssh_private_key_file: ~/.ssh/boutique-vault
+
+# StrictHostKeyChecking=accept-new: acepta la huella la PRIMERA vez y la exige
+# igual despues. Sin el, la primera corrida se queda esperando un "yes".
+ansible_ssh_common_args: >-
+  -o StrictHostKeyChecking=accept-new
+  -o ProxyCommand="sh -c 'aws ssm start-session --region {{ region_aws }}
+  --target %h --document-name AWS-StartSSHSession
+  --parameters portNumber=%p'"

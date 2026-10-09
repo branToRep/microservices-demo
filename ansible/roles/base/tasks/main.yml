@@ -1,0 +1,112 @@
+---
+# -----------------------------------------------------------------------------
+# Rol base: lo que cualquier maquina del proyecto necesita antes de ponerle
+# encima un servicio. Todo idempotente: la segunda corrida debe dar changed=0.
+# -----------------------------------------------------------------------------
+
+# needrestart (Ubuntu 24.04) reinicia servicios por su cuenta al terminar apt.
+# Si reinicia el agente o SSH a media corrida, se corta el tunel SSM por el que
+# esta entrando Ansible. Se suspende aqui; los servicios toman las librerias
+# nuevas en su siguiente reinicio normal.
+- name: Paquetes del sistema
+  environment:
+    NEEDRESTART_SUSPEND: "1"
+  block:
+    - name: Actualizar el indice de paquetes si tiene mas de una hora
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Aplicar las actualizaciones pendientes
+      ansible.builtin.apt:
+        upgrade: safe
+
+    - name: Instalar los paquetes base
+      ansible.builtin.apt:
+        name: "{{ base_paquetes }}"
+        state: present
+
+# ------------------------- actualizaciones automaticas -----------------------
+# Los parches de seguridad se instalan solos. Lo que NO se hace solo es
+# reiniciar: Vault se sella en cada reinicio y hay que desellarla a mano, asi
+# que un reinicio automatico a las tres de la manana apagaria la tienda.
+- name: Activar las actualizaciones automaticas
+  ansible.builtin.template:
+    src: 20auto-upgrades.j2
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Prohibir el reinicio automatico tras actualizar
+  ansible.builtin.template:
+    src: 52boutique-sin-reinicio.j2
+    dest: /etc/apt/apt.conf.d/52boutique-sin-reinicio
+    owner: root
+    group: root
+    mode: "0644"
+
+# ----------------------------------- hora ------------------------------------
+# Con la hora mal, TLS rechaza certificados validos y Vault rechaza los JWT del
+# cluster por "emitido en el futuro" o "caducado". Es un fallo que no menciona
+# la hora en ningun sitio.
+- name: Fijar la zona horaria
+  community.general.timezone:
+    name: "{{ base_zona_horaria }}"
+
+- name: Usar el servidor de hora de Amazon
+  ansible.builtin.template:
+    src: amazon.sources.j2
+    dest: /etc/chrony/sources.d/amazon.sources
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Recargar las fuentes de chrony
+
+- name: Mantener chrony encendido
+  ansible.builtin.systemd_service:
+    name: chrony
+    state: started
+    enabled: true
+
+# ------------------------------------ SSH ------------------------------------
+# El 22 no esta abierto a internet (ADR 0020), pero SSH sigue corriendo dentro
+# para el tunel SSM. Se endurece igual: si algun dia alguien abre el puerto por
+# error, lo que encuentre no acepta contrasenas ni a root.
+#
+# El nombre empieza por 10: sshd se queda con el PRIMER valor que lee de cada
+# opcion, y Ubuntu trae su propio 50-cloud-init.conf.
+# En Ubuntu 24.04 SSH arranca por socket, bajo demanda, y /run/sshd puede no
+# existir. Sin ese directorio 'sshd -t' falla, y con el la validacion de abajo.
+- name: Asegurar el directorio de separacion de privilegios de SSH
+  ansible.builtin.file:
+    path: /run/sshd
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Endurecer SSH
+  ansible.builtin.template:
+    src: 10-boutique.conf.j2
+    dest: /etc/ssh/sshd_config.d/10-boutique.conf
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /usr/sbin/sshd -t -f %s
+  notify: Recargar SSH
+
+# --------------------------------- reinicio ----------------------------------
+# Si una actualizacion pide reiniciar, se AVISA y no se reinicia. Ver arriba.
+- name: Comprobar si el sistema pide reiniciar
+  ansible.builtin.stat:
+    path: /var/run/reboot-required
+  register: base_reinicio_pendiente
+
+- name: Avisar del reinicio pendiente
+  ansible.builtin.debug:
+    msg: >-
+      El sistema pide reiniciar para terminar de aplicar actualizaciones. No se
+      hace solo: tras reiniciar, Vault queda sellada. Hacerlo a mano en una
+      ventana de mantenimiento y desellar despues.
+  when: base_reinicio_pendiente.stat.exists

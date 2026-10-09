@@ -1,0 +1,15 @@
+---
+# La maquina de Vault NO se lista aqui. Su id de instancia cambia cada vez que
+# se recrea (y la prueba de fuego la recrea a proposito), asi que un inventario
+# escrito a mano mentiria al dia siguiente.
+#
+# site.yml la descubre en cada corrida desde la salida de Terraform. Aqui solo
+# queda localhost, que es quien hace esa consulta.
+all:
+  hosts:
+    localhost:
+      ansible_connection: local
+      ansible_python_interpreter: "{{ ansible_playbook_python }}"
+  children:
+    # Vacio a proposito: site.yml le anade la maquina al correr.
+    vault: {}
