@@ -1,7 +1,7 @@
 # 0020 · Una Vault por operador, entrada por SSM, y el cluster lee el secreto
 
 - **Estado:** aceptada
-- **Issues:** #NN
+- **Issues:** #99
 - **Reemplaza en parte:** ADR 0019 (grupo de seguridad, entrada del pipeline,
   entrega al pod, custodia de las llaves y rotacion). El resto de la 0019 sigue
   en pie.

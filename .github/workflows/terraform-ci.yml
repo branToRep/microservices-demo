@@ -74,6 +74,20 @@ jobs:
       - name: terraform validate
         run: terraform -chdir=${{ env.ENTORNO }} validate
 
+      # El entorno de Vault se valida en el MISMO trabajo, con pasos propios, y
+      # no con una matriz. Una matriz renombraria el trabajo a "Formato y
+      # sintaxis (dev)" y "(vault)", y la proteccion de main espera el nombre
+      # exacto "Formato y sintaxis": el check requerido se quedaria pendiente
+      # para siempre (ver docs/PROTECCION-RAMAS.md).
+      #
+      # No hay plan del entorno de Vault en el CI: el plan es informativo, y este
+      # entorno no cambia de una sesion a otra.
+      - name: terraform init (vault, sin backend)
+        run: terraform -chdir=infra/aws/envs/vault init -backend=false -input=false
+
+      - name: terraform validate (vault)
+        run: terraform -chdir=infra/aws/envs/vault validate
+
       - name: Hay credenciales para el plan?
         id: credenciales
         env:

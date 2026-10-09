@@ -104,7 +104,10 @@ fi
 
 # --------------------------------------------------------------------------
 barrer_residuos() {
-  [ -n "$VPC" ] || VPC=$(aws ec2 describe-vpcs --filters Name=tag:Proyecto,Values=boutique \
+  # Entorno=dev ademas de Proyecto: desde la v2.3.0 hay otra VPC del proyecto,
+  # la de Vault, y sin este filtro 'Vpcs[0]' podia ser esa.
+  [ -n "$VPC" ] || VPC=$(aws ec2 describe-vpcs \
+      --filters Name=tag:Proyecto,Values=boutique Name=tag:Entorno,Values=dev \
       --query 'Vpcs[0].VpcId' --output text 2>/dev/null | grep -v None || echo "")
   [ -n "$VPC" ] || { echo "    no encuentro la VPC, nada que barrer"; return; }
 

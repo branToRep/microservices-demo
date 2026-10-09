@@ -56,6 +56,17 @@ crash.log
 # Se versiona la plantilla backend.hcl.ejemplo, no el archivo real.
 infra/aws/envs/dev/backend.hcl
 
+# El entorno de Vault (ADR 0019 y 0020) sigue las mismas reglas que envs/dev:
+# su configuracion y su lockfile SI se versionan.
+!infra/aws/envs/vault/terraform.tfvars
+!infra/aws/envs/vault/.terraform.lock.hcl
+
+# Llaves privadas. La de SSH vive en ~/.ssh, fuera del repositorio; esto es la
+# red de seguridad por si alguien la copia aqui por error.
+*.pem
+*.key
+boutique-vault
+
 # Salida de 'helm template', para comparar el chart contra los manifiestos.
 # Es un archivo de trabajo, no se versiona.
 revision-chart.yaml
