@@ -1,7 +1,9 @@
 # 0019 · Los secretos salen de Vault, y el pipeline entra con su propio token
 
-- **Estado:** aceptada
-- **Issues:** #NN
+- **Estado:** aceptada; **reemplazada en parte por la 0020** (grupo de
+  seguridad, entrada del pipeline, entrega al pod, custodia de las llaves y
+  rotacion). Leer las dos juntas.
+- **Issues:** #97
 - **Cubre:** Pasos 3 y 4 de la Fase III (flujo de secretos y topologia)
 
 ## Contexto
