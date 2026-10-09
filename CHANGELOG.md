@@ -32,6 +32,40 @@ plataforma, y se construye sobre un pipeline que ya funciona.
 - `apagar.sh --solo-nodos`, para bajar los nodos sin destruir el plano de
   control cuando se va a volver el mismo dia.
 
+## [2.5.0] - 2026-10-09
+**Vault corre.** El rol `vault` la instala, la configura y la deja respondiendo
+por TLS con la UI encendida (Pasos 4 y 5 de la lamina). Queda sin inicializar a
+proposito: las llaves de desellado se generan a mano, en el ticket siguiente.
+
+MENOR: capacidad nueva.
+
+### Anadido
+- `ansible/roles/vault/`:
+  - **Instalacion desde el repositorio de HashiCorp, verificando la huella de
+    su llave de firma.** HashiCorp la roto el 2026-09-10; si vuelve a cambiar,
+    el playbook se detiene en vez de confiar en una llave que nadie miro.
+  - **Version fijada (`1.21.*`) y paquete retenido**, para que el
+    `apt upgrade` del rol base no la mueva: actualizar Vault es una decision.
+  - **CA propia, restringida** con name constraints a la IP de esta Vault,
+    `127.0.0.1` y `localhost`, y el certificado del servidor firmado por ella.
+    La llave de la CA no sale de la maquina; `ca.crt` (publico) se copia a
+    `~/.vault-boutique/` del operador.
+  - `vault.hcl`: `ui = true`, solo TLS 1.2+, almacenamiento en archivo, mlock.
+  - Directorio y rotacion del registro de auditoria (se activa al inicializar).
+  - Comprobacion de salud por TLS **verificando contra la CA**.
+  - Reinicio solo si cambia `vault.hcl` (sella Vault, y lo avisa); renovar el
+    certificado o rotar el registro solo **recarga**, que no sella.
+- `ansible/README.md` — la CLI de Vault en WSL y como confiar en la CA en Windows.
+
+### Cambiado
+- `ansible/site.yml` — aplica `vault` despues de `base`.
+- `ansible/requirements.yml` — `community.crypto` 3.5.0.
+
+### Resultado medido
+- Primera corrida de `site.yml` con el rol `vault`: localhost: ok = 2 / vault-boutique: ok = 36 changed = 18 skipped = 1
+- Segunda corrida seguida, `changed=0`: localhost: ok = 2 / vault-boutique: ok = 32 changed = 0 skipped = 1
+- `vault status` desde WSL, verificando con la CA: Initialized false, Sealed true, Build Date 2026-03-04T17:40:05Z
+
 ## [2.4.0] - 2026-10-09
 
 **Ansible entra en el proyecto.** La estructura del repositorio de Ansible y un

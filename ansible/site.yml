@@ -37,3 +37,4 @@
   become: true
   roles:
     - base
+    - vault

@@ -1,0 +1,28 @@
+---
+# Solo cuando cambia el archivo del repositorio de HashiCorp (tasks/instalar.yml).
+- name: Actualizar el indice de apt
+  ansible.builtin.apt:
+    update_cache: true
+  environment:
+    NEEDRESTART_SUSPEND: "1"
+
+# REINICIAR SELLA VAULT. Solo lo provoca un cambio en vault.hcl, que no se
+# aplica de otra forma. Tras un reinicio hay que desellar con las llaves.
+- name: Reiniciar Vault
+  ansible.builtin.systemd_service:
+    name: vault
+    state: restarted
+
+- name: Avisar de que Vault quedo sellada
+  ansible.builtin.debug:
+    msg: >-
+      Vault se reinicio para aplicar vault.hcl y esta SELLADA. Si ya estaba
+      inicializada, desellarla: vault operator unseal (dos veces, dos llaves).
+  listen: Reiniciar Vault
+
+# Recargar NO sella: Vault relee el certificado TLS y reabre el registro de
+# auditoria (SIGHUP). Es lo que usan la renovacion del certificado y logrotate.
+- name: Recargar Vault
+  ansible.builtin.systemd_service:
+    name: vault
+    state: reloaded

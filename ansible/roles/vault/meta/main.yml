@@ -1,0 +1,11 @@
+---
+galaxy_info:
+  author: Equipo del proyecto
+  description: HashiCorp Vault con TLS de CA propia, UI y almacenamiento en archivo
+  license: Apache-2.0
+  min_ansible_version: "2.17"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - all
+dependencies: []

@@ -1,0 +1,31 @@
+---
+# Version de Vault. Comodin de parche: recibe correcciones (1.21.x) pero no
+# salta de version menor sin que nadie lo decida. El paquete ademas queda
+# retenido (ver tasks/instalar.yml), asi que ni 'apt upgrade' lo mueve.
+vault_version: "1.21.*"
+
+# Huella de la llave con la que HashiCorp firma su repositorio de paquetes.
+# Rotada el 2026-09-10; fuente: https://www.hashicorp.com/official-packaging-guide
+# Si HashiCorp la vuelve a rotar, la instalacion se DETIENE aqui en vez de
+# confiar en una llave nueva sin que nadie la haya mirado.
+vault_huella_repositorio: "D55C0D1AC78A8D8126CB631CFC9CA96ACA026560"
+
+vault_puerto: 8200
+vault_dir_config: /etc/vault.d
+vault_dir_datos: /opt/vault/data
+vault_dir_tls: /opt/vault/tls
+vault_dir_auditoria: /var/log/vault
+
+# La IP elastica: la pone site.yml desde 'terraform output'. Va dentro del
+# certificado, y es la direccion con la que todo el mundo llama a Vault.
+vault_ip_publica: "{{ ip_publica }}"
+
+# Validez de los certificados. La CA vive diez anos; el del servidor, 825 dias
+# (el maximo que aceptan los navegadores para uno de servidor).
+vault_ca_dias: 3650
+vault_cert_dias: 825
+
+# Donde queda una copia del certificado de la CA en la maquina del operador.
+# Es PUBLICO: sirve para que el navegador, la CLI y el cluster confien en Vault.
+# Fuera del repositorio porque cada operador tiene su propia CA (ADR 0020).
+vault_ca_local: "{{ lookup('ansible.builtin.env', 'HOME') }}/.vault-boutique/ca.crt"

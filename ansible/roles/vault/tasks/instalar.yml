@@ -1,0 +1,68 @@
+---
+- name: Asegurar el directorio de llaves de apt
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Descargar la llave del repositorio de HashiCorp
+  ansible.builtin.get_url:
+    url: https://apt.releases.hashicorp.com/gpg
+    dest: /etc/apt/keyrings/hashicorp.asc
+    owner: root
+    group: root
+    mode: "0644"
+
+# get_url no sabe si la llave es la buena: solo que se descargo. Esto compara
+# la huella con la que publica HashiCorp. Si no coincide, se para aqui.
+- name: Leer la huella de la llave descargada
+  ansible.builtin.command:
+    cmd: gpg --show-keys --with-colons /etc/apt/keyrings/hashicorp.asc
+  register: vault_llave_gpg
+  changed_when: false
+  check_mode: false   # solo lee; sin esto, --check deja el assert sin datos
+
+- name: Comprobar que es la llave oficial de HashiCorp
+  ansible.builtin.assert:
+    that:
+      - vault_huella_repositorio in vault_llave_gpg.stdout
+    fail_msg: >-
+      La llave de https://apt.releases.hashicorp.com/gpg no tiene la huella
+      esperada ({{ vault_huella_repositorio }}). Comprobar en
+      https://www.hashicorp.com/official-packaging-guide si HashiCorp la roto
+      y, solo entonces, actualizar vault_huella_repositorio.
+    quiet: true
+
+- name: Anadir el repositorio de HashiCorp
+  ansible.builtin.template:
+    src: hashicorp.sources.j2
+    dest: /etc/apt/sources.list.d/hashicorp.sources
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Actualizar el indice de apt
+
+# El indice tiene que saber del repositorio nuevo ANTES de instalar, y los
+# handlers normalmente esperan al final de la jugada. Esto los ejecuta aqui.
+- name: Actualizar el indice ahora si el repositorio cambio
+  ansible.builtin.meta: flush_handlers
+
+# allow_change_held_packages: para que cambiar vault_version funcione aunque el
+# paquete este retenido (la tarea siguiente).
+- name: Instalar Vault
+  ansible.builtin.apt:
+    name: "vault={{ vault_version }}"
+    state: present
+    allow_change_held_packages: true
+  environment:
+    NEEDRESTART_SUSPEND: "1"
+
+# Retenido: el 'apt upgrade' del rol base no lo puede mover a otra version.
+# Actualizar Vault es una decision (cambiar vault_version), no un efecto
+# secundario de mantener el sistema al dia.
+- name: Retener la version de Vault
+  ansible.builtin.dpkg_selections:
+    name: vault
+    selection: hold

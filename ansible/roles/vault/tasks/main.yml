@@ -1,0 +1,18 @@
+---
+# -----------------------------------------------------------------------------
+# Rol vault: instala HashiCorp Vault y lo deja escuchando con TLS y la UI
+# encendida (Pasos 4 y 5 de la lamina; ADR 0019 y 0020).
+#
+# Deja Vault SIN INICIALIZAR. 'vault operator init' genera las llaves de
+# desellado y el token raiz, y eso no lo hace ningun script: si lo hiciera,
+# las llaves acabarian en un archivo. Ver el README.
+# -----------------------------------------------------------------------------
+
+- name: Instalar Vault desde el repositorio de HashiCorp
+  ansible.builtin.import_tasks: instalar.yml
+
+- name: Crear la CA y el certificado del servidor
+  ansible.builtin.import_tasks: tls.yml
+
+- name: Configurar y arrancar Vault
+  ansible.builtin.import_tasks: configurar.yml
