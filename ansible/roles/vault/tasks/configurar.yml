@@ -1,0 +1,63 @@
+---
+- name: Escribir vault.hcl
+  ansible.builtin.template:
+    src: vault.hcl.j2
+    dest: "{{ vault_dir_config }}/vault.hcl"
+    owner: vault
+    group: vault
+    mode: "0640"
+  notify: Reiniciar Vault
+
+# El registro de auditoria se ACTIVA despues de inicializar (vault audit
+# enable), porque eso necesita Vault abierta. Aqui solo se prepara donde vivira
+# y como se rota.
+- name: Directorio del registro de auditoria
+  ansible.builtin.file:
+    path: "{{ vault_dir_auditoria }}"
+    state: directory
+    owner: vault
+    group: vault
+    mode: "0750"
+
+- name: Rotacion del registro de auditoria
+  ansible.builtin.template:
+    src: logrotate-vault.j2
+    dest: /etc/logrotate.d/vault
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Mantener Vault encendido y arrancando con la maquina
+  ansible.builtin.systemd_service:
+    name: vault
+    state: started
+    enabled: true
+
+- name: Aplicar ya los cambios pendientes de configuracion
+  ansible.builtin.meta: flush_handlers
+
+# Comprueba tres cosas de una vez: que Vault responde, que lo hace por TLS, y
+# que el certificado es valido para la CA propia (validate_certs con ca_path).
+#   200 lista   429 en espera   501 sin inicializar   503 sellada
+# Cualquiera de esos significa "el servidor funciona".
+- name: Esperar a que Vault responda por TLS
+  ansible.builtin.uri:
+    url: "https://127.0.0.1:{{ vault_puerto }}/v1/sys/health"
+    ca_path: "{{ vault_dir_tls }}/ca.crt"
+    validate_certs: true
+    status_code: [200, 429, 472, 473, 501, 503]
+  register: vault_salud
+  check_mode: false   # una consulta GET; tambien en --check
+  retries: 10
+  delay: 3
+  until: vault_salud is succeeded
+
+- name: Estado de Vault
+  when: vault_salud.json is defined
+  ansible.builtin.debug:
+    msg: >-
+      Vault responde en https://{{ vault_ip_publica }}:{{ vault_puerto }}.
+      Inicializada: {{ vault_salud.json.initialized }}.
+      Sellada: {{ vault_salud.json.sealed }}.
+      {{ 'Siguiente paso: vault operator init (ver ansible/README.md).'
+         if not vault_salud.json.initialized else '' }}

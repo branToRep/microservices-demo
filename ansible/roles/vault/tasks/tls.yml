@@ -1,0 +1,107 @@
+---
+# -----------------------------------------------------------------------------
+# Una CA propia y, firmado por ella, el certificado del servidor.
+#
+# Por que una CA y no un solo certificado autofirmado: el certificado del
+# servidor caduca y se renueva; la CA no cambia. Quien confia en la CA (el
+# navegador, la CLI, el cluster) sigue confiando tras renovar, sin tocar nada.
+#
+# La llave de la CA no sale de la maquina. Solo se copia afuera ca.crt, que es
+# publico.
+# -----------------------------------------------------------------------------
+
+- name: Llave de la CA
+  community.crypto.openssl_privatekey:
+    path: "{{ vault_dir_tls }}/ca.key"
+    type: ECC
+    curve: secp384r1
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Solicitud de la CA
+  community.crypto.openssl_csr:
+    path: "{{ vault_dir_tls }}/ca.csr"
+    privatekey_path: "{{ vault_dir_tls }}/ca.key"
+    common_name: "CA de Vault boutique ({{ vault_ip_publica }})"
+    use_common_name_for_san: false
+    basic_constraints:
+      - "CA:TRUE"
+    basic_constraints_critical: true
+    key_usage:
+      - keyCertSign
+      - cRLSign
+    key_usage_critical: true
+    # La CA SOLO puede firmar para las direcciones de esta Vault. Para la UI sin
+    # avisos, el operador instala ca.crt como raiz de confianza en su sistema; sin
+    # esta restriccion, quien robara ca.key podria hacerse pasar ante su navegador
+    # por cualquier sitio. Con ella, solo por esta Vault.
+    name_constraints_permitted:
+      - "IP:{{ vault_ip_publica }}/255.255.255.255"
+      - "IP:127.0.0.1/255.255.255.255"
+      - "DNS:localhost"
+    name_constraints_critical: true
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Certificado de la CA
+  community.crypto.x509_certificate:
+    path: "{{ vault_dir_tls }}/ca.crt"
+    csr_path: "{{ vault_dir_tls }}/ca.csr"
+    privatekey_path: "{{ vault_dir_tls }}/ca.key"
+    provider: selfsigned
+    selfsigned_not_after: "+{{ vault_ca_dias }}d"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Llave del servidor
+  community.crypto.openssl_privatekey:
+    path: "{{ vault_dir_tls }}/vault.key"
+    type: ECC
+    curve: secp256r1
+    owner: vault
+    group: vault
+    mode: "0600"
+
+# La IP elastica va como SAN: es la direccion con la que llaman el navegador,
+# la CLI y el cluster. 127.0.0.1 es para la comprobacion de salud de abajo.
+- name: Solicitud del servidor
+  community.crypto.openssl_csr:
+    path: "{{ vault_dir_tls }}/vault.csr"
+    privatekey_path: "{{ vault_dir_tls }}/vault.key"
+    common_name: vault-boutique
+    subject_alt_name:
+      - "IP:{{ vault_ip_publica }}"
+      - "IP:127.0.0.1"
+      - "DNS:localhost"
+    key_usage:
+      - digitalSignature
+    key_usage_critical: true
+    extended_key_usage:
+      - serverAuth
+    owner: root
+    group: root
+    mode: "0644"
+
+# Al renovarse, Vault lo relee con una RECARGA, no un reinicio: reiniciar la
+# sellaria, recargar no.
+- name: Certificado del servidor, firmado por la CA
+  community.crypto.x509_certificate:
+    path: "{{ vault_dir_tls }}/vault.crt"
+    csr_path: "{{ vault_dir_tls }}/vault.csr"
+    provider: ownca
+    ownca_path: "{{ vault_dir_tls }}/ca.crt"
+    ownca_privatekey_path: "{{ vault_dir_tls }}/ca.key"
+    ownca_not_after: "+{{ vault_cert_dias }}d"
+    owner: vault
+    group: vault
+    mode: "0644"
+  notify: Recargar Vault
+
+- name: Copiar el certificado de la CA a la maquina del operador
+  ansible.builtin.fetch:
+    src: "{{ vault_dir_tls }}/ca.crt"
+    dest: "{{ vault_ca_local }}"
+    flat: true

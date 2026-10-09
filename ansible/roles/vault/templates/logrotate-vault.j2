@@ -1,0 +1,14 @@
+# {{ ansible_managed }}
+# El registro de auditoria crece con cada peticion. Se guardan 14 dias.
+{{ vault_dir_auditoria }}/*.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 vault vault
+    postrotate
+        /bin/systemctl reload vault > /dev/null 2>&1 || true
+    endscript
+}
