@@ -28,7 +28,7 @@ contrasena en memoria durante cada despliegue. La lamina describe otra cosa:
 en Vault y las aplicaciones consumen la nueva version". Los Pasos 9 y 10, en
 cambio, piden que lo haga el pipeline con `hashicorp/vault-action`.
 
-Se consulto al profesor el AAAA-MM-DD: se puede apartar de los Pasos 9 y 10 si
+Se consulto al profesor el 2026-10-06: se puede apartar de los Pasos 9 y 10 si
 el cambio queda documentado y justificado. Este ADR es ese documento.
 
 ## Decision

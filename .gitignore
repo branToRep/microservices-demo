@@ -70,3 +70,7 @@ boutique-vault
 # Salida de 'helm template', para comparar el chart contra los manifiestos.
 # Es un archivo de trabajo, no se versiona.
 revision-chart.yaml
+
+# Colecciones de Ansible: se descargan con 'ansible-galaxy collection install
+# -r ansible/requirements.yml'. Lo que se versiona es la lista, no el codigo.
+ansible/.colecciones/

@@ -1,0 +1,8 @@
+# {{ ansible_managed }}
+# Se lee antes que 50-cloud-init.conf: en sshd gana el primer valor.
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+X11Forwarding no
+AllowUsers ubuntu
+MaxAuthTries 3

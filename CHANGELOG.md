@@ -32,7 +32,39 @@ plataforma, y se construye sobre un pipeline que ya funciona.
 - `apagar.sh --solo-nodos`, para bajar los nodos sin destruir el plano de
   control cuando se va a volver el mismo dia.
 
-## [2.3.0] - AAAA-MM-DD
+## [2.4.0] - 2026-10-09
+
+**Ansible entra en el proyecto.** La estructura del repositorio de Ansible y un
+primer rol, `base`, aplicados a la maquina de Vault. Vault todavia no: eso es el
+siguiente rol, sobre esta base.
+
+MENOR: capacidad nueva. La tienda y la infraestructura no cambian.
+
+### Anadido
+- `ansible/` — `ansible.cfg`, inventario, `site.yml`, `requirements.yml` con
+  versiones fijas y un README con los comandos exactos.
+  - **Sin ids ni IP escritos a mano.** La primera jugada pregunta a
+    `terraform output` que maquina es; recrearla no exige editar nada.
+  - **Se entra por SSH dentro de un tunel SSM** (ADR 0020), configurado en
+    `group_vars/vault.yml`: el repositorio no depende del `~/.ssh/config` de
+    nadie.
+- `ansible/roles/base/`:
+  - actualizaciones de seguridad automaticas, **sin reinicio automatico**:
+    Vault se sella al reiniciar;
+  - hora con Amazon Time Sync, dentro de la VPC (el grupo de seguridad no deja
+    salir NTP), y zona UTC para que los registros se puedan comparar;
+  - SSH endurecido aunque el 22 no este abierto: sin contrasenas, sin root,
+    solo el usuario `ubuntu`;
+  - aviso, y no reinicio, cuando una actualizacion lo pide.
+
+### Cambiado
+- `CHANGELOG.md` — la fecha y el resultado medido de la 2.3.0, pendientes.
+
+### Resultado medido
+- Primera corrida de `site.yml`: localhost: ok = 2 / vault-boutique: ok = 14 changed = 14 skipped = 1
+- Segunda corrida seguida, `changed=0`: localhost: ok = 2 / vault-boutique: ok = 12 changed = 0 skipped = 1
+
+## [2.3.0] - 2026-10-09
 
 **La maquina de Vault existe.** Un entorno de Terraform propio,
 `infra/aws/envs/vault/`, que `apagar.sh` no toca. Todavia no tiene Vault
@@ -63,8 +95,10 @@ se apaga exactamente igual que antes.
 - `CHANGELOG.md` — la entrada de la 2.2.2 y la fecha de la 2.2.1, que faltaban.
 
 ### Resultado medido
-- `AWS-StartSSHSession` contra la instancia: _pendiente de anotar_.
-- Disco cifrado aceptado por el laboratorio: _pendiente de anotar_.
+- `AWS-StartSSHSession` contra la instancia: funciona (2026-10-09). `ssh` por el
+  tunel SSM devuelve `ubuntu` con el grupo de seguridad sin regla para el 22.
+- Disco cifrado aceptado por el laboratorio: si (2026-10-08), `terraform apply`
+  sin errores.
 
 ## [2.2.2] - 2026-10-08
 

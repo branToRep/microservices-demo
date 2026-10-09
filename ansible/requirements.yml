@@ -1,0 +1,8 @@
+---
+# Colecciones que usan los roles, con version fija: la misma razon por la que
+# Terraform tiene lockfile. Se instalan en ~/.ansible/collections (ver ansible.cfg).
+collections:
+  - name: ansible.posix
+    version: 1.6.2
+  - name: community.general
+    version: 10.7.0

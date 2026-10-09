@@ -1,0 +1,23 @@
+---
+# Valores del rol base. Todo lo que cambia el comportamiento esta aqui.
+
+# Paquetes que el resto de los roles da por hechos.
+#   chrony              la hora; TLS y los JWT dependen de ella (ver tasks)
+#   unattended-upgrades parches de seguridad sin intervencion
+#   gnupg               el rol de Vault lo usa para verificar el repositorio de HashiCorp
+base_paquetes:
+  - ca-certificates
+  - chrony
+  - curl
+  - gnupg
+  - jq
+  - unattended-upgrades
+
+# UTC y no la hora local: el registro de auditoria de Vault, los logs del
+# sistema y los de GitHub o AWS se comparan entre si. Con zonas distintas,
+# reconstruir un incidente es aritmetica.
+base_zona_horaria: UTC
+
+# El servidor de hora de Amazon, dentro de la propia VPC. Es el unico posible:
+# el grupo de seguridad solo deja salir 80 y 443, y NTP usa el 123/udp.
+base_servidor_hora: 169.254.169.123

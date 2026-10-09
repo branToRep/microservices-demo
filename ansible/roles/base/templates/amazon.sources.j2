@@ -1,0 +1,3 @@
+# {{ ansible_managed }}
+# Amazon Time Sync: responde desde dentro de la VPC, sin salir a internet.
+server {{ base_servidor_hora }} prefer iburst minpoll 4 maxpoll 4

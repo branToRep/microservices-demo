@@ -1,0 +1,19 @@
+---
+# -----------------------------------------------------------------------------
+# Configuracion de ansible-lint.
+#
+# Se corre SIEMPRE con objetivos explicitos, desde ansible/:
+#
+#   ansible-lint site.yml roles/
+#
+# Sin ellos, ansible-lint toma la raiz del repositorio (por el .git) y revisa
+# sus ~100 YAML, incluidas las plantillas de Helm (que no son YAML valido hasta
+# renderizarlas) y los flujos de GitHub: decenas de errores ajenos a Ansible.
+# -----------------------------------------------------------------------------
+
+# El perfil mas estricto. Si algo no lo cumple, se corrige, no se rebaja.
+profile: production
+
+# No descargar nada: las colecciones ya las instala
+# 'ansible-galaxy collection install -r requirements.yml'.
+offline: true
