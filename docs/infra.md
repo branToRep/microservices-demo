@@ -29,8 +29,12 @@ infra/aws/
 └── modules/                        LAS PIEZAS — no se corren solas
     ├── red/                        VPC, subredes, rutas          (12 recursos)
     ├── cluster/                    EKS, nodos, addons            ( 6 recursos)
-    └── balanceador/                ELB y su grupo de seguridad   ( 3 recursos)
+    ├── balanceador/                ELB y su grupo de seguridad   ( 3 recursos)
+    └── servidor-vault/             la máquina de Vault           (12 recursos)
 ```
+
+Desde la v2.3.0 hay un segundo entorno, `envs/vault/`, con el mismo esquema de
+archivos. Se explica aparte, en la sección 9: vive con otras reglas.
 
 **Módulo** = una carpeta de Terraform reutilizable. No se ejecuta sola: recibe
 valores por sus `variables.tf`, crea cosas en su `main.tf`, y devuelve datos por
@@ -444,3 +448,53 @@ kubectl apply -k kubernetes-manifests/
 
 Confundir los dos directorios fue una fuente recurrente de errores que no se
 parecen en nada a su causa.
+
+---
+
+## 9. El entorno de Vault (`envs/vault/`)
+
+La máquina donde corre HashiCorp Vault (ADR 0019 y 0020). Mismo esquema de
+archivos que `envs/dev`, un solo módulo (`modules/servidor-vault/`), y **otra
+regla de vida**: se crea una vez y se queda.
+
+| | `envs/dev` | `envs/vault` |
+|---|---|---|
+| Se destruye | cada sesión, con `apagar.sh` | nunca a propósito; ningún script lo toca |
+| Estado | `dev/terraform.tfstate` | `vault/terraform.tfstate`, mismo bucket |
+| Red | `10.0.0.0/16`, forma de EKS | `10.1.0.0/16`, una subred |
+| Entrada | el ELB por el 80 | **solo el 8200**; a la máquina se entra por SSM |
+
+### Qué crea `modules/servidor-vault/`
+
+VPC, gateway de internet, una subred pública, su tabla de rutas, el grupo de
+seguridad con una regla de entrada (8200) y dos de salida (443 y 80), el par de
+llaves, la instancia Ubuntu 24.04 y la IP elástica. Doce recursos, y **nada
+instalado**: lo que corre dentro lo pone Ansible.
+
+### Las tres decisiones que no se ven a simple vista
+
+- **`ignore_changes = [ami]`.** La imagen se busca como "la más reciente de
+  Ubuntu 24.04". Sin esa línea, cada imagen nueva de Canonical haría que el
+  siguiente `apply` **reemplazara** la instancia, y con ella el disco donde
+  Vault guarda sus datos. Para cambiar de imagen a propósito:
+  `terraform apply -replace=module.servidor_vault.aws_instance.vault`.
+- **Solo IMDSv2.** Los metadatos de la instancia, credenciales incluidas,
+  exigen un token de sesión. Cierra el robo de credenciales por SSRF.
+- **La salida también se limita.** 443 para SSM, HashiCorp y el emisor OIDC de
+  EKS; 80 para los espejos de apt. El DNS y la hora van a servicios de Amazon
+  dentro de la VPC, que los grupos de seguridad no filtran.
+
+### Los comandos
+
+```bash
+# una vez por operador, fuera del repositorio
+ssh-keygen -t ed25519 -f ~/.ssh/boutique-vault -C "boutique-vault"
+
+cd infra/aws/envs/vault
+terraform init -backend-config=../dev/backend.hcl   # el mismo bucket
+terraform apply
+terraform output comando_ssm                         # entra sin puerto 22
+```
+
+`apagar.sh` no toca este entorno. Para destruirlo hay que hacerlo a mano, y
+destruirlo **borra Vault**: sus datos viven en el disco de la instancia.

@@ -32,7 +32,67 @@ plataforma, y se construye sobre un pipeline que ya funciona.
 - `apagar.sh --solo-nodos`, para bajar los nodos sin destruir el plano de
   control cuando se va a volver el mismo dia.
 
-## [2.2.1] - AAAA-MM-DD
+## [2.3.0] - AAAA-MM-DD
+
+**La maquina de Vault existe.** Un entorno de Terraform propio,
+`infra/aws/envs/vault/`, que `apagar.sh` no toca. Todavia no tiene Vault
+instalado: eso lo pone Ansible en los tickets siguientes.
+
+MENOR porque es una capacidad nueva que no rompe nada: la tienda se levanta y
+se apaga exactamente igual que antes.
+
+### Anadido
+- `infra/aws/envs/vault/` — el entorno. Mismo bucket que `envs/dev`, otra
+  clave de estado (`vault/terraform.tfstate`); reutiliza `../dev/backend.hcl`.
+- `infra/aws/modules/servidor-vault/` — VPC `10.1.0.0/16` con una subred,
+  Ubuntu 24.04 en `t3.micro`, IP elastica, disco cifrado, solo IMDSv2.
+  **Una sola regla de entrada: 8200.** A la maquina se entra por SSM, con el
+  `LabInstanceProfile` que ya trae la cuenta (ADR 0020).
+- `docs/infra.md` — seccion 9, el entorno de Vault.
+
+### Cambiado
+- `.github/workflows/terraform-ci.yml` — el trabajo "Formato y sintaxis"
+  valida tambien `envs/vault`. Con pasos propios y no con una matriz, que
+  cambiaria el nombre del check requerido y bloquearia todos los PR.
+- `scripts/aws/apagar.sh` — el barrido de residuos busca la VPC por
+  `Proyecto=boutique` **y** `Entorno=dev`. Con dos VPC del proyecto en la
+  cuenta, la busqueda antigua podia encontrar la de Vault.
+- `.gitignore` — las excepciones de `terraform.tfvars` y del lockfile para
+  `envs/vault`, y una red de seguridad para llaves privadas.
+- `docs/adr/0020-...md` — el numero de su issue (#99), que faltaba.
+- `CHANGELOG.md` — la entrada de la 2.2.2 y la fecha de la 2.2.1, que faltaban.
+
+### Resultado medido
+- `AWS-StartSSHSession` contra la instancia: _pendiente de anotar_.
+- Disco cifrado aceptado por el laboratorio: _pendiente de anotar_.
+
+## [2.2.2] - 2026-10-08
+
+El diseno de la 2.2.1 choca con tres cosas medidas despues, y se corrige antes
+de construir nada. No cambia infraestructura ni despliegue.
+
+### Anadido
+- `docs/adr/0020-una-vault-por-operador-ssm-y-cluster-que-lee.md`:
+  - **Una Vault por operador**, en su propia cuenta de AWS, con el mismo codigo.
+    Una compartida dejaria a uno sin secreto cada vez que el laboratorio del
+    otro esta cerrado.
+  - **Se entra por SSM**, medido en el laboratorio: el grupo de seguridad abre
+    solo el 8200, como pide la lamina. Ansible usa SSH dentro del tunel.
+  - **El cluster lee el secreto** con el Vault Secrets Operator. El pipeline ya
+    no toca Vault, y rotar la contrasena no exige redesplegar.
+
+### Cambiado
+- `docs/adr/0019-flujo-de-secretos-con-vault.md` — marcada como reemplazada en
+  parte por la 0020, y con el numero de su issue (#97), que faltaba.
+
+Esta entrada se escribio con la 2.3.0: el PR #100 se fusiono sin ella.
+
+### Lo que esta version se aparta de la lamina
+Los Pasos 9 y 10 piden que el pipeline lea el secreto con `vault-action` y lo
+inyecte. Aqui lo lee el cluster. Aprobado por el profesor a condicion de
+documentarlo; la justificacion completa esta en el ADR.
+
+## [2.2.1] - 2026-10-06
 
 Primer paso de la **Fase III**: el diseno de la gestion de secretos, escrito
 antes de crear nada. No cambia infraestructura ni despliegue.
