@@ -32,6 +32,29 @@ plataforma, y se construye sobre un pipeline que ya funciona.
 - `apagar.sh --solo-nodos`, para bajar los nodos sin destruir el plano de
   control cuando se va a volver el mismo dia.
 
+## [2.6.0] - AAAA-MM-DD
+
+**El CI revisa Ansible.** `ansible-lint` (perfil `production`) y
+`ansible-playbook --syntax-check` corren en cada PR, dentro del check que ya
+bloquea la fusion.
+
+MENOR: el pipeline gana un control que antes no tenia.
+
+### Cambiado
+- `.github/workflows/terraform-ci.yml`:
+  - el trabajo **"Formato y sintaxis"** instala `ansible-core` 2.18 y
+    `ansible-lint` 26.9.0 (versiones fijas) y revisa `ansible/`. En el mismo
+    trabajo y no en uno nuevo: es el que exige la proteccion de `main`, asi que
+    un hallazgo de Ansible bloquea la fusion desde el primer dia, sin tocar la
+    configuracion del repositorio.
+  - el flujo pasa a llamarse "CI de infraestructura": ya no es solo Terraform.
+    El archivo conserva su nombre.
+- `ansible/README.md` — `ansible-lint` local con la misma version que el CI.
+
+### Resultado medido
+- PR con el control en verde: _pendiente de anotar_.
+- El control en rojo ante una violacion a proposito: _pendiente de anotar_.
+
 ## [2.5.0] - 2026-10-09
 **Vault corre.** El rol `vault` la instala, la configura y la deja respondiendo
 por TLS con la UI encendida (Pasos 4 y 5 de la lamina). Queda sin inicializar a
