@@ -17,6 +17,10 @@ falta tocar `~/.ssh/config`: la forma de entrar va en `group_vars/vault.yml`.
 
 ## Correrlo
 
+**Lo normal es no correrlo a mano:** `bash scripts/aws/levantar-vault.sh`, desde
+la raiz, hace Terraform, espera a SSM y corre este playbook, todo en uno. Lo de
+abajo es para trabajar en los roles.
+
 ```bash
 cd ansible                                            # ansible.cfg se lee de aqui
 export ANSIBLE_CONFIG=$PWD/ansible.cfg                # en WSL sobre /mnt/c, ver abajo

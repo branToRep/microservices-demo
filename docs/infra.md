@@ -496,5 +496,14 @@ terraform apply
 terraform output comando_ssm                         # entra sin puerto 22
 ```
 
+Desde la v2.7.0, todo lo anterior (salvo la llave) en un comando, que ademas
+espera a que la maquina este en SSM y corre Ansible:
+
+```bash
+bash scripts/aws/levantar-vault.sh
+```
+
+Si el plan fuera a borrar o reemplazar algo, el script se detiene sin aplicarlo.
+
 `apagar.sh` no toca este entorno. Para destruirlo hay que hacerlo a mano, y
 destruirlo **borra Vault**: sus datos viven en el disco de la instancia.
