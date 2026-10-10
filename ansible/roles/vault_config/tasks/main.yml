@@ -1,0 +1,139 @@
+---
+# -----------------------------------------------------------------------------
+# Configura una Vault YA INICIALIZADA y DESELLADA, hablando con su API desde la
+# maquina del operador (Paso 7 de la lamina). No entra en la maquina: todo va
+# por HTTPS al 8200, verificando contra la CA propia.
+#
+# Cada paso pregunta primero como esta y solo cambia si hace falta, asi que la
+# segunda corrida termina en changed=0 como el resto de Ansible.
+# -----------------------------------------------------------------------------
+
+- name: Comprobar que estan VAULT_ADDR, VAULT_CACERT y VAULT_TOKEN
+  ansible.builtin.assert:
+    that:
+      - vault_config_addr | length > 0
+      - vault_config_cacert | length > 0
+      - vault_config_token | length > 0
+    fail_msg: >-
+      Faltan variables de entorno. Exportar VAULT_ADDR, VAULT_CACERT y
+      VAULT_TOKEN (ver docs/OPERACION-VAULT.md).
+    quiet: true
+
+- name: Leer el estado del sello
+  ansible.builtin.uri:
+    url: "{{ vault_config_addr }}/v1/sys/seal-status"
+    ca_path: "{{ vault_config_cacert }}"
+  register: vault_config_sello
+  check_mode: false
+
+- name: Comprobar que Vault esta inicializada y desellada
+  ansible.builtin.assert:
+    that:
+      - vault_config_sello.json.initialized
+      - not vault_config_sello.json.sealed
+    fail_msg: >-
+      Vault {{ 'no esta inicializada' if not vault_config_sello.json.initialized
+      else 'esta sellada' }}. Ver docs/OPERACION-VAULT.md.
+    quiet: true
+
+# --------------------------- registro de auditoria ---------------------------
+# Lo primero, antes de crear nada: asi la propia creacion del secreto ya queda
+# registrada. Vault escribe cada peticion (quien, que ruta, cuando) con los
+# valores sensibles cifrados con HMAC: el registro no filtra los secretos.
+- name: Leer los registros de auditoria activos
+  ansible.builtin.uri:
+    url: "{{ vault_config_addr }}/v1/sys/audit"
+    ca_path: "{{ vault_config_cacert }}"
+    headers:
+      X-Vault-Token: "{{ vault_config_token }}"
+  register: vault_config_auditorias
+  check_mode: false
+
+- name: Activar el registro de auditoria en archivo
+  ansible.builtin.uri:
+    url: "{{ vault_config_addr }}/v1/sys/audit/file"
+    method: PUT
+    ca_path: "{{ vault_config_cacert }}"
+    headers:
+      X-Vault-Token: "{{ vault_config_token }}"
+    body_format: json
+    body:
+      type: file
+      description: Cada peticion a Vault, con los valores sensibles en HMAC
+      options:
+        file_path: "{{ vault_config_archivo_auditoria }}"
+    status_code: [200, 204]
+  when: "'file/' not in (vault_config_auditorias.json.data | default(vault_config_auditorias.json))"
+  changed_when: true
+
+# --------------------------------- motor KV ----------------------------------
+# KV version 2: guarda versiones de cada secreto. Cambiar la contrasena no
+# destruye la anterior, y se puede volver atras o ver cuando cambio.
+- name: Leer los motores de secretos montados
+  ansible.builtin.uri:
+    url: "{{ vault_config_addr }}/v1/sys/mounts"
+    ca_path: "{{ vault_config_cacert }}"
+    headers:
+      X-Vault-Token: "{{ vault_config_token }}"
+  register: vault_config_montajes
+  check_mode: false
+
+- name: Montar el motor KV v2
+  ansible.builtin.uri:
+    url: "{{ vault_config_addr }}/v1/sys/mounts/{{ vault_config_ruta_kv }}"
+    method: POST
+    ca_path: "{{ vault_config_cacert }}"
+    headers:
+      X-Vault-Token: "{{ vault_config_token }}"
+    body_format: json
+    body:
+      type: kv
+      description: Secretos de la boutique (ADR 0019)
+      options:
+        version: "2"
+    status_code: [200, 204]
+  when: (vault_config_ruta_kv ~ '/') not in (vault_config_montajes.json.data | default(vault_config_montajes.json))
+  changed_when: true
+
+# ---------------------------- la contrasena de Redis -------------------------
+# Se genera aqui y se escribe directamente en Vault: no pasa por ningun archivo,
+# ni se imprime. Si ya existe, NO se toca: rotarla es una decision, no un efecto
+# de volver a correr el playbook.
+#
+# Solo letras y numeros: cartservice la recibe dentro de una cadena de conexion
+# ("redis-cart:6379,password=..."), donde una coma o un igual la partirian.
+# 32 caracteres alfanumericos son unos 190 bits: de sobra.
+- name: Comprobar si la contrasena de Redis ya existe
+  ansible.builtin.uri:
+    url: "{{ vault_config_addr }}/v1/{{ vault_config_ruta_kv }}/data/{{ vault_config_ruta_redis }}"
+    ca_path: "{{ vault_config_cacert }}"
+    headers:
+      X-Vault-Token: "{{ vault_config_token }}"
+    status_code: [200, 404]
+  register: vault_config_redis
+  check_mode: false
+  no_log: true   # la respuesta trae la contrasena si existe
+
+- name: Crear la contrasena de Redis
+  ansible.builtin.uri:
+    url: "{{ vault_config_addr }}/v1/{{ vault_config_ruta_kv }}/data/{{ vault_config_ruta_redis }}"
+    method: POST
+    ca_path: "{{ vault_config_cacert }}"
+    headers:
+      X-Vault-Token: "{{ vault_config_token }}"
+    body_format: json
+    body:
+      data:
+        password: "{{ lookup('ansible.builtin.password', '/dev/null', length=32, chars=['ascii_letters', 'digits']) }}"
+    status_code: [200, 204]
+  when: vault_config_redis.status == 404
+  changed_when: true
+  no_log: true   # el cuerpo lleva la contrasena
+
+- name: Resumen
+  ansible.builtin.debug:
+    msg: >-
+      Auditoria en {{ vault_config_archivo_auditoria }}, KV v2 en
+      {{ vault_config_ruta_kv }}/, y la contrasena de Redis en
+      {{ vault_config_ruta_kv }}/{{ vault_config_ruta_redis }}
+      ({{ 'ya existia, sin cambios' if vault_config_redis.status == 200 else 'creada ahora' }}).

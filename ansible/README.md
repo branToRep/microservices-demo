@@ -25,7 +25,7 @@ abajo es para trabajar en los roles.
 cd ansible                                            # ansible.cfg se lee de aqui
 export ANSIBLE_CONFIG=$PWD/ansible.cfg                # en WSL sobre /mnt/c, ver abajo
 ansible-galaxy collection install -r requirements.yml # una vez, y al cambiar versiones
-ansible-lint site.yml roles/                          # revisar; SIEMPRE con objetivos
+ansible-lint site.yml configurar-vault.yml roles/     # revisar; SIEMPRE con objetivos
 ansible-playbook site.yml --check --diff              # que cambiaria, sin cambiar nada
 ansible-playbook site.yml                             # aplicarlo
 ```
@@ -40,11 +40,13 @@ que el playbook es idempotente.
 | `ansible.cfg` | inventario, roles, colecciones locales, salida legible, `pipelining` |
 | `inventario.yml` | solo `localhost` y un grupo `vault` vacio |
 | `site.yml` | jugada 1: pregunta a Terraform que maquina es; jugada 2: la configura |
+| `configurar-vault.yml` | configura Vault por su API, ya inicializada; necesita token |
 | `group_vars/vault.yml` | como se entra: SSH dentro de un tunel SSM, sin puerto 22 |
 | `requirements.yml` | colecciones con version fija |
 | `.ansible-lint` | perfil `production`, sin descargas; se corre con `site.yml roles/` |
 | `roles/base/` | actualizaciones, hora, endurecimiento de SSH |
 | `roles/vault/` | Vault desde el repositorio firmado de HashiCorp, CA propia, TLS, UI |
+| `roles/vault_config/` | auditoria, motor KV v2 y la contrasena de Redis |
 
 El id de la instancia no esta escrito en ningun sitio: cambia cada vez que la
 maquina se recrea, y `site.yml` lo lee de `terraform output` en cada corrida.
@@ -61,8 +63,9 @@ si lo respeta.
 ## Despues del rol `vault`
 
 El playbook deja Vault **escuchando y sin inicializar**. Inicializarla genera las
-llaves de desellado y el token raiz, y eso se hace a mano, una vez (ticket
-siguiente): si lo hiciera un script, las llaves acabarian en un archivo.
+llaves de desellado y el token raiz, y eso se hace a mano, una vez: si lo hiciera
+un script, las llaves acabarian en un archivo. Inicializar, desellar y correr
+`configurar-vault.yml`: **`docs/OPERACION-VAULT.md`**.
 
 ### La CLI de Vault, en WSL
 

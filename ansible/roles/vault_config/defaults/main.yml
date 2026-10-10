@@ -1,0 +1,17 @@
+---
+# Se leen del entorno, las MISMAS variables que usa la CLI de Vault. Asi el
+# operador exporta una vez y le sirven la CLI y este playbook.
+#   VAULT_ADDR    https://<ip>:8200 (terraform output vault_addr)
+#   VAULT_CACERT  ~/.vault-boutique/ca.crt (lo deja el rol vault)
+#   VAULT_TOKEN   el token raiz, SOLO mientras dura la configuracion inicial
+vault_config_addr: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') }}"
+vault_config_cacert: "{{ lookup('ansible.builtin.env', 'VAULT_CACERT') }}"
+vault_config_token: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') }}"
+
+# Tiene que coincidir con vault_dir_auditoria del rol vault, que crea el
+# directorio con el dueno y la rotacion correctos.
+vault_config_archivo_auditoria: /var/log/vault/audit.log
+
+# Donde vive la contrasena de Redis (ADR 0019): motor KV v2 montado en secret/.
+vault_config_ruta_kv: secret
+vault_config_ruta_redis: boutique/redis-cart
