@@ -32,7 +32,7 @@ plataforma, y se construye sobre un pipeline que ya funciona.
 - `apagar.sh --solo-nodos`, para bajar los nodos sin destruir el plano de
   control cuando se va a volver el mismo dia.
 
-## [2.7.0] - AAAA-MM-DD
+## [2.7.0] - 2026-10-10
 
 **La prueba de fuego.** La maquina de Vault se destruye en una cuenta de AWS y se
 recrea desde cero en **otra**, con un comando, y la segunda corrida no cambia
