@@ -110,3 +110,6 @@
       hace solo: tras reiniciar, Vault queda sellada. Hacerlo a mano en una
       ventana de mantenimiento y desellar despues.
   when: base_reinicio_pendiente.stat.exists
+
+- name: violacion a proposito
+  ansible.builtin.command: uptime
