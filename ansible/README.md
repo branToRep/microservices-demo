@@ -8,7 +8,7 @@ dentro. Nada se instala a mano. Diseno en los ADR 0019 y 0020.
 ```bash
 sudo apt-get install -y pipx && pipx ensurepath   # y abrir otra terminal
 pipx install --include-deps ansible-core==2.18.*
-pipx install ansible-lint                          # para revisar antes del PR
+pipx install ansible-lint==26.9.0                  # la misma version que el CI
 ```
 
 Ademas, lo mismo que pide `envs/vault`: la AWS CLI con credenciales vigentes,
