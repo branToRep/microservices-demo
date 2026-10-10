@@ -120,13 +120,13 @@ jobs:
       # aparece ademas como anotacion en la linea exacta del PR.
       - name: ansible-lint
         working-directory: ansible
-        run: ansible-lint site.yml roles/
+        run: ansible-lint site.yml configurar-vault.yml roles/
 
       # Lo que ansible-lint no comprueba del todo: que Ansible mismo acepte el
       # playbook (roles que existen, sintaxis de cada jugada).
       - name: ansible-playbook --syntax-check
         working-directory: ansible
-        run: ansible-playbook --syntax-check site.yml
+        run: ansible-playbook --syntax-check site.yml configurar-vault.yml
 
       - name: Hay credenciales para el plan?
         id: credenciales

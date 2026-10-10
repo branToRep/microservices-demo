@@ -32,6 +32,41 @@ plataforma, y se construye sobre un pipeline que ya funciona.
 - `apagar.sh --solo-nodos`, para bajar los nodos sin destruir el plano de
   control cuando se va a volver el mismo dia.
 
+## [2.8.0] - AAAA-MM-DD
+
+**Vault guarda el primer secreto.** Inicializada, desellada, con el registro de
+auditoria activo, el motor KV v2 montado y la contrasena de Redis dentro
+(Paso 7 de la lamina).
+
+MENOR: capacidad nueva.
+
+### Anadido
+- `docs/OPERACION-VAULT.md` — inicializar (3 fragmentos, 2 para desellar), donde
+  guardar las llaves, desellar sin dejar llaves en el historial, configurar y
+  comprobar sin revelar el secreto. **Inicializar es manual a proposito.**
+- `ansible/configurar-vault.yml` y `ansible/roles/vault_config/` — por la API de
+  Vault, desde la maquina del operador, verificando TLS contra la CA propia:
+  - el registro de auditoria **primero**, para que lo demas ya quede registrado;
+  - KV v2 en `secret/`;
+  - la contrasena de Redis: 32 caracteres alfanumericos (va dentro de una
+    cadena de conexion, donde una coma la partiria), generada y escrita sin
+    imprimirse; si ya existe, no se toca.
+  - Separado de `site.yml`: aquel configura la maquina sin secretos; este
+    necesita un token y solo corre cuando hace falta.
+
+### Cambiado
+- `.github/workflows/terraform-ci.yml` — `ansible-lint` y `--syntax-check`
+  incluyen `configurar-vault.yml`.
+- `ansible/README.md` — el playbook nuevo y el enlace al documento.
+
+### Resultado medido
+- `vault status` tras desellar (`Sealed false`): _pendiente de anotar_.
+- `configurar-vault.yml`, primera corrida `changed=3`, segunda `changed=0`:
+  _pendiente de anotar_.
+- `vault kv metadata get secret/boutique/redis-cart` (version 1): _pendiente_.
+- Una linea del registro de auditoria con la ruta y los valores en HMAC:
+  _pendiente_.
+
 ## [2.7.0] - 2026-10-10
 
 **La prueba de fuego.** La maquina de Vault se destruye en una cuenta de AWS y se

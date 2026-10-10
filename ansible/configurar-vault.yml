@@ -1,0 +1,19 @@
+---
+# -----------------------------------------------------------------------------
+# La configuracion de Vault, una vez inicializada y desellada.
+#
+# Separado de site.yml a proposito: site.yml configura la MAQUINA y no necesita
+# ningun secreto; este playbook configura VAULT y necesita un token. Asi
+# site.yml puede correr siempre, sin token, y este solo cuando hace falta.
+#
+#   export VAULT_ADDR=...  VAULT_CACERT=...  VAULT_TOKEN=...
+#   ansible-playbook configurar-vault.yml
+#
+# Ver docs/OPERACION-VAULT.md.
+# -----------------------------------------------------------------------------
+
+- name: Configurar Vault por su API
+  hosts: localhost
+  gather_facts: false
+  roles:
+    - vault_config
