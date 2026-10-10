@@ -74,3 +74,7 @@ revision-chart.yaml
 # Colecciones de Ansible: se descargan con 'ansible-galaxy collection install
 # -r ansible/requirements.yml'. Lo que se versiona es la lista, no el codigo.
 ansible/.colecciones/
+
+# Logs de la prueba de fuego (docs/PRUEBA-DE-FUEGO.md): evidencia del
+# portafolio, no codigo.
+*.log

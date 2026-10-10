@@ -32,7 +32,35 @@ plataforma, y se construye sobre un pipeline que ya funciona.
 - `apagar.sh --solo-nodos`, para bajar los nodos sin destruir el plano de
   control cuando se va a volver el mismo dia.
 
-## [2.6.0] - AAAA-MM-DD
+## [2.7.0] - 2026-10-10
+
+**La prueba de fuego.** La maquina de Vault se destruye en una cuenta de AWS y se
+recrea desde cero en **otra**, con un comando, y la segunda corrida no cambia
+nada (Paso 6 de la lamina).
+
+MENOR: un comando nuevo que antes no existia.
+
+### Anadido
+- `scripts/aws/levantar-vault.sh` — de una cuenta vacia a Vault respondiendo:
+  comprueba requisitos y credenciales, Terraform, enciende la maquina si el
+  laboratorio la detuvo, **espera a que aparezca en SSM** y corre Ansible.
+  - Planifica antes de aplicar, y **se detiene si el plan borra o reemplaza**
+    algo: esta maquina guarda los datos de Vault en su disco.
+  - `terraform init -reconfigure`: cambiar de cuenta (de bucket) no pregunta si
+    migrar el estado de la otra.
+  - **No hay `apagar-vault.sh`, a proposito**: destruir Vault no puede estar a
+    un comando de distancia.
+- `docs/PRUEBA-DE-FUEGO.md` — el procedimiento y el resultado.
+
+### Cambiado
+- `ansible/README.md`, `docs/infra.md` — apuntan al script.
+- `.gitignore` — `*.log`: los de la prueba son evidencia, no codigo.
+- `CHANGELOG.md` — la fecha de la 2.6.0, pendiente.
+
+### Resultado medido
+Ver `docs/PRUEBA-DE-FUEGO.md`.
+
+## [2.6.0] - 2026-10-09
 
 **El CI revisa Ansible.** `ansible-lint` (perfil `production`) y
 `ansible-playbook --syntax-check` corren en cada PR, dentro del check que ya
