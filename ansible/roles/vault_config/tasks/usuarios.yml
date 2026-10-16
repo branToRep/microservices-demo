@@ -1,0 +1,68 @@
+---
+# ---------------------------- metodo userpass --------------------------------
+- name: Leer los metodos de autenticacion activos
+  ansible.builtin.uri:
+    url: "{{ vault_config_addr }}/v1/sys/auth"
+    ca_path: "{{ vault_config_cacert }}"
+    headers:
+      X-Vault-Token: "{{ vault_config_token }}"
+  register: vault_config_metodos
+  check_mode: false
+
+- name: Activar el metodo userpass
+  ansible.builtin.uri:
+    url: "{{ vault_config_addr }}/v1/sys/auth/userpass"
+    method: POST
+    ca_path: "{{ vault_config_cacert }}"
+    headers:
+      X-Vault-Token: "{{ vault_config_token }}"
+    body_format: json
+    body:
+      type: userpass
+      description: Acceso de las personas a la UI y la CLI
+    status_code: [200, 204]
+  when: "'userpass/' not in (vault_config_metodos.json.data | default(vault_config_metodos.json))"
+  changed_when: true
+
+# --------------------------------- el usuario --------------------------------
+# Si ya existe, NO se toca: ni su contrasena ni nada. Cambiarla es cosa de su
+# dueno (vault write auth/userpass/users/<usuario>/password), no de volver a
+# correr el playbook.
+- name: Comprobar si el usuario ya existe
+  ansible.builtin.uri:
+    url: "{{ vault_config_addr }}/v1/auth/userpass/users/{{ vault_config_usuario }}"
+    ca_path: "{{ vault_config_cacert }}"
+    headers:
+      X-Vault-Token: "{{ vault_config_token }}"
+    status_code: [200, 404]
+  register: vault_config_usuario_actual
+  check_mode: false
+
+- name: Exigir una contrasena para crear el usuario
+  ansible.builtin.assert:
+    that:
+      - vault_config_contrasena_nueva | length >= 16
+    fail_msg: >-
+      El usuario '{{ vault_config_usuario }}' no existe y hace falta su
+      contrasena (16 caracteres o mas) en VAULT_CONTRASENA_NUEVA. Ver
+      docs/OPERACION-VAULT.md, seccion 5.
+    quiet: true
+  when: vault_config_usuario_actual.status == 404
+
+- name: Crear el usuario con la politica operador
+  ansible.builtin.uri:
+    url: "{{ vault_config_addr }}/v1/auth/userpass/users/{{ vault_config_usuario }}"
+    method: POST
+    ca_path: "{{ vault_config_cacert }}"
+    headers:
+      X-Vault-Token: "{{ vault_config_token }}"
+    body_format: json
+    body:
+      password: "{{ vault_config_contrasena_nueva }}"
+      token_policies: [operador]
+      token_ttl: "{{ vault_config_token_ttl }}"
+      token_max_ttl: "{{ vault_config_token_max_ttl }}"
+    status_code: [200, 204]
+  when: vault_config_usuario_actual.status == 404
+  changed_when: true
+  no_log: true   # el cuerpo lleva la contrasena

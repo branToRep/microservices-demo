@@ -32,7 +32,42 @@ plataforma, y se construye sobre un pipeline que ya funciona.
 - `apagar.sh --solo-nodos`, para bajar los nodos sin destruir el plano de
   control cuando se va a volver el mismo dia.
 
-## [2.8.0] - AAAA-MM-DD
+## [2.9.0] - 2026-10-15
+
+**Ya no hay token raiz.** Una politica de solo lectura para el cluster, una de
+administracion para la persona, acceso con usuario y contrasena con tokens que
+caducan, y el raiz revocado (Paso 8 de la lamina).
+
+MENOR: capacidad nueva.
+
+### Anadido
+- `ansible/roles/vault_config/files/politicas/` — las politicas como archivos
+  del repositorio, que Ansible compara y reescribe si difieren:
+  - `boutique-lectura`: **leer una sola ruta**, nada mas. Es la del cluster.
+  - `operador`: administrar esta Vault, sin ser raiz. Cubre exactamente lo que
+    necesita `configurar-vault.yml` para repetirse sin raiz.
+- `ansible/roles/vault_config/tasks/politicas.yml` y `usuarios.yml` — el metodo
+  `userpass` y el usuario de la persona, con tokens de 1 h (hasta 8 h). Su
+  contrasena entra por el entorno y no se imprime; si el usuario ya existe, no
+  se toca.
+- `docs/OPERACION-VAULT.md`, seccion 5 — entrar como uno mismo, poner a prueba
+  la politica de solo lectura, revocar el raiz y como regenerarlo con las
+  llaves si alguna vez hiciera falta.
+
+### Cambiado
+- `ansible/roles/vault_config/defaults/main.yml` — el token se toma de
+  `VAULT_TOKEN` o, si no, de `~/.vault-token` (donde lo deja `vault login`).
+- `ansible/README.md` — la descripcion del rol.
+- `CHANGELOG.md` — la fecha y parte del resultado medido de la 2.8.0.
+
+### Resultado medido
+- `configurar-vault.yml` repetido **con el usuario, sin raiz**: `changed=0`:
+  _pendiente_.
+- Token de `boutique-lectura`: lee la ruta; escribir, listar y `secrets list`,
+  `403`: _pendiente_.
+- El token raiz revocado: `vault token lookup` con el, `403`: _pendiente_.
+
+## [2.8.0] - 2026-10-10
 
 **Vault guarda el primer secreto.** Inicializada, desellada, con el registro de
 auditoria activo, el motor KV v2 montado y la contrasena de Redis dentro
@@ -61,8 +96,8 @@ MENOR: capacidad nueva.
 
 ### Resultado medido
 - `vault status` tras desellar (`Sealed false`): _pendiente de anotar_.
-- `configurar-vault.yml`, primera corrida `changed=3`, segunda `changed=0`:
-  _pendiente de anotar_.
+- `configurar-vault.yml`, primera corrida `changed=3`, segunda `changed=0`
+  (2026-10-10).
 - `vault kv metadata get secret/boutique/redis-cart` (version 1): _pendiente_.
 - Una linea del registro de auditoria con la ruta y los valores en HMAC:
   _pendiente_.

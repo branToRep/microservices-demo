@@ -46,7 +46,7 @@ que el playbook es idempotente.
 | `.ansible-lint` | perfil `production`, sin descargas; se corre con `site.yml roles/` |
 | `roles/base/` | actualizaciones, hora, endurecimiento de SSH |
 | `roles/vault/` | Vault desde el repositorio firmado de HashiCorp, CA propia, TLS, UI |
-| `roles/vault_config/` | auditoria, motor KV v2 y la contrasena de Redis |
+| `roles/vault_config/` | auditoria, KV v2, el secreto de Redis, politicas y usuarios |
 
 El id de la instancia no esta escrito en ningun sitio: cambia cada vez que la
 maquina se recrea, y `site.yml` lo lee de `terraform output` en cada corrida.
