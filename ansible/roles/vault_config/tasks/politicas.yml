@@ -1,0 +1,31 @@
+---
+# Cada politica se compara con su archivo y solo se escribe si difiere.
+- name: Leer las politicas actuales
+  ansible.builtin.uri:
+    url: "{{ vault_config_addr }}/v1/sys/policies/acl/{{ item }}"
+    ca_path: "{{ vault_config_cacert }}"
+    headers:
+      X-Vault-Token: "{{ vault_config_token }}"
+    status_code: [200, 404]
+  loop: "{{ vault_config_politicas }}"
+  register: vault_config_politicas_actuales
+  check_mode: false
+
+- name: Escribir las politicas que faltan o difieren
+  ansible.builtin.uri:
+    url: "{{ vault_config_addr }}/v1/sys/policies/acl/{{ item.item }}"
+    method: PUT
+    ca_path: "{{ vault_config_cacert }}"
+    headers:
+      X-Vault-Token: "{{ vault_config_token }}"
+    body_format: json
+    body:
+      policy: "{{ lookup('ansible.builtin.file', 'politicas/' ~ item.item ~ '.hcl') }}"
+    status_code: [200, 204]
+  loop: "{{ vault_config_politicas_actuales.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: >-
+    item.status == 404 or
+    (item.json.data.policy | trim) != (lookup('ansible.builtin.file', 'politicas/' ~ item.item ~ '.hcl') | trim)
+  changed_when: true

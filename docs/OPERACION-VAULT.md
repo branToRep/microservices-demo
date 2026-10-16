@@ -104,3 +104,89 @@ ssh $(terraform -chdir=infra/aws/envs/vault output -raw id_instancia) \
 Cada línea dice quién pidió qué ruta y cuándo. Los valores sensibles (tokens,
 contraseñas) aparecen como `hmac-sha256:...`: el registro demuestra el acceso
 sin filtrar el secreto.
+
+---
+
+## 5. Acceso personal y adiós al token raíz (Paso 8)
+
+El token raíz no caduca, puede todo y en la auditoría solo dice "root". A partir
+de aquí cada persona entra con **su usuario**, con tokens de 1 hora (renovables
+hasta 8), y el raíz **deja de existir**.
+
+### 5.1 Crear las políticas y el usuario (una vez, todavía con el raíz)
+
+```bash
+read -rs VAULT_TOKEN && export VAULT_TOKEN                   # el token raíz
+export VAULT_USUARIO=<tu-nombre>                             # p. ej. tu usuario de GitHub
+read -rs VAULT_CONTRASENA_NUEVA && export VAULT_CONTRASENA_NUEVA   # 16+ caracteres; al gestor de contraseñas
+cd ansible && export ANSIBLE_CONFIG=$PWD/ansible.cfg
+ansible-playbook configurar-vault.yml                        # políticas, userpass, usuario
+unset VAULT_CONTRASENA_NUEVA
+cd ..
+```
+
+Crea `boutique-lectura` (leer **una** ruta) y `operador` (administrar esta
+Vault), activa el método `userpass` y crea tu usuario con `operador`. Las
+políticas viven en `ansible/roles/vault_config/files/politicas/`: si se editan
+ahí, la siguiente corrida las reescribe en Vault.
+
+### 5.2 Entrar como tú, y comprobar que basta
+
+```bash
+unset VAULT_TOKEN
+vault login -method=userpass username=$VAULT_USUARIO         # pide la contraseña
+vault token lookup | grep -E "display_name|policies|ttl"     # userpass-<tu-nombre>, operador, ~1h
+cd ansible && ansible-playbook configurar-vault.yml; cd ..   # changed=0, ya SIN el raíz
+```
+
+`vault login` guarda el token en `~/.vault-token`; con el usuario es aceptable,
+porque caduca en una hora.
+
+La última línea es la prueba de que `operador` cubre todo lo necesario: el
+playbook se puede repetir sin el raíz.
+
+### 5.3 La política de solo lectura, puesta a prueba
+
+Un token con **solo** `boutique-lectura`, de 5 minutos:
+
+```bash
+LECTOR=$(vault token create -policy=boutique-lectura -ttl=5m -field=token)
+
+VAULT_TOKEN=$LECTOR vault kv get -format=json secret/boutique/redis-cart | jq '.data.data | keys'
+#   ["password"]      <- puede leer (y no se imprime el valor)
+VAULT_TOKEN=$LECTOR vault kv put secret/boutique/redis-cart password=otra
+#   403 permission denied   <- no puede escribir
+VAULT_TOKEN=$LECTOR vault kv list secret/boutique
+#   403 permission denied   <- no puede ni listar
+VAULT_TOKEN=$LECTOR vault secrets list
+#   403 permission denied   <- no ve nada más de Vault
+
+vault token revoke $LECTOR && unset LECTOR
+```
+
+Es exactamente lo que tendrá el clúster: leer una ruta y nada más.
+
+### 5.4 Revocar el token raíz
+
+**Solo después de que 5.2 funcione.** Sin el raíz, el usuario es la única forma
+de entrar (además de regenerar el raíz con las llaves, abajo).
+
+```bash
+read -rs RAIZ                                     # el token raíz, por última vez
+VAULT_TOKEN=$RAIZ vault token revoke -self        # Success! Revoked token
+VAULT_TOKEN=$RAIZ vault token lookup              # 403 permission denied
+unset RAIZ
+```
+
+Borrarlo también del gestor de contraseñas: ya no sirve para nada.
+
+**Si algún día hace falta raíz** (por ejemplo, si se pierde la contraseña del
+usuario), se genera uno nuevo con 2 de los 3 fragmentos de desellado:
+`vault operator generate-root -init`, y después `vault operator generate-root`
+con cada fragmento. Es el procedimiento de emergencia de Vault; no hace falta
+para nada del día a día.
+
+### 5.5 La UI, como tú
+
+`https://<ip>:8200`, método **Username**. La captura del portafolio va con tu
+usuario arriba a la derecha, no con *root*.

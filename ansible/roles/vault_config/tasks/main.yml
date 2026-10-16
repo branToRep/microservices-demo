@@ -15,8 +15,8 @@
       - vault_config_cacert | length > 0
       - vault_config_token | length > 0
     fail_msg: >-
-      Faltan variables de entorno. Exportar VAULT_ADDR, VAULT_CACERT y
-      VAULT_TOKEN (ver docs/OPERACION-VAULT.md).
+      Faltan VAULT_ADDR, VAULT_CACERT o un token (VAULT_TOKEN, o
+      ~/.vault-token tras 'vault login'). Ver docs/OPERACION-VAULT.md.
     quiet: true
 
 - name: Leer el estado del sello
@@ -130,6 +130,14 @@
   changed_when: true
   no_log: true   # el cuerpo lleva la contrasena
 
+# ------------------------- politicas y acceso personal -----------------------
+- name: Politicas ACL
+  ansible.builtin.import_tasks: politicas.yml
+
+- name: Acceso personal con usuario y contrasena
+  ansible.builtin.include_tasks: usuarios.yml
+  when: vault_config_usuario | length > 0
+
 - name: Resumen
   ansible.builtin.debug:
     msg: >-
@@ -137,3 +145,6 @@
       {{ vault_config_ruta_kv }}/, y la contrasena de Redis en
       {{ vault_config_ruta_kv }}/{{ vault_config_ruta_redis }}
       ({{ 'ya existia, sin cambios' if vault_config_redis.status == 200 else 'creada ahora' }}).
+      Politicas: {{ vault_config_politicas | join(', ') }}.
+      {{ ('Usuario ' ~ vault_config_usuario ~ (' (ya existia).' if vault_config_usuario_actual.status == 200 else ' (creado ahora).'))
+         if vault_config_usuario | length > 0 else 'Usuarios: sin cambios (VAULT_USUARIO vacio).' }}

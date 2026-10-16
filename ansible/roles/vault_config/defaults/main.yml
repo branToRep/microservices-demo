@@ -3,10 +3,15 @@
 # operador exporta una vez y le sirven la CLI y este playbook.
 #   VAULT_ADDR    https://<ip>:8200 (terraform output vault_addr)
 #   VAULT_CACERT  ~/.vault-boutique/ca.crt (lo deja el rol vault)
-#   VAULT_TOKEN   el token raiz, SOLO mientras dura la configuracion inicial
+#   VAULT_TOKEN   el raiz en la configuracion inicial; despues, el del usuario
 vault_config_addr: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') }}"
 vault_config_cacert: "{{ lookup('ansible.builtin.env', 'VAULT_CACERT') }}"
-vault_config_token: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') }}"
+# Si no esta en VAULT_TOKEN, el de ~/.vault-token: es donde lo deja
+# 'vault login -method=userpass' (docs/OPERACION-VAULT.md, seccion 5).
+vault_config_token: >-
+  {{ lookup('ansible.builtin.env', 'VAULT_TOKEN')
+     | default(lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'HOME') ~ '/.vault-token', errors='ignore'), true)
+     | default('', true) | trim }}
 
 # Tiene que coincidir con vault_dir_auditoria del rol vault, que crea el
 # directorio con el dueno y la rotacion correctos.
@@ -15,3 +20,22 @@ vault_config_archivo_auditoria: /var/log/vault/audit.log
 # Donde vive la contrasena de Redis (ADR 0019): motor KV v2 montado en secret/.
 vault_config_ruta_kv: secret
 vault_config_ruta_redis: boutique/redis-cart
+
+# ------------------------------ politicas ------------------------------------
+# Se leen de files/politicas/<nombre>.hcl. Si el texto en Vault difiere del
+# archivo, se reescribe: el repositorio manda.
+vault_config_politicas:
+  - boutique-lectura
+  - operador
+
+# ------------------------------ acceso personal ------------------------------
+# Un usuario por persona con la politica operador. Su contrasena NO esta en el
+# repositorio: se pasa por el entorno solo la vez que se crea el usuario.
+# Sin VAULT_USUARIO, el playbook no toca usuarios: asi se puede repetir en
+# cualquier terminal sin que intente crear uno.
+vault_config_usuario: "{{ lookup('ansible.builtin.env', 'VAULT_USUARIO') }}"
+vault_config_contrasena_nueva: "{{ lookup('ansible.builtin.env', 'VAULT_CONTRASENA_NUEVA') }}"
+
+# Tokens de vida corta: una sesion de trabajo, no para siempre.
+vault_config_token_ttl: 1h
+vault_config_token_max_ttl: 8h
