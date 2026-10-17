@@ -41,11 +41,33 @@ spec:
             {{- toYaml $.Values.seguridad.contenedor | nindent 12 }}
           ports:
             - containerPort: {{ $s.puerto }}
-          {{- with $s.env }}
+          {{- /* La contrasena de Redis (values.yaml, contrasenaRedis). Va PRIMERO,
+               y no es estetica: Kubernetes solo sustituye $(REDIS_PASSWORD) si
+               esa variable aparece ANTES en la lista. Las de 'env' salen de un
+               mapa, que Helm recorre en orden alfabetico, y REDIS_ADDR va
+               antes que REDIS_PASSWORD: dentro del mapa, la referencia llegaria
+               literal a cartservice y Redis la rechazaria.
+
+               Apagada, esta plantilla produce exactamente lo mismo que antes. */}}
+          {{- $conContrasena := and $.Values.contrasenaRedis.activa $s.usaContrasenaRedis }}
+          {{- if or $s.env $conContrasena }}
           env:
-            {{- range $k, $v := . }}
+            {{- if $conContrasena }}
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.contrasenaRedis.secreto }}
+                  key: {{ $.Values.contrasenaRedis.clave }}
+            {{- end }}
+            {{- range $k, $v := $s.env }}
             - name: {{ $k }}
+              {{- if and $conContrasena (eq $k "REDIS_ADDR") }}
+              {{- /* StackExchange.Redis acepta la cadena completa en REDIS_ADDR:
+                     cartservice no necesita cambios de codigo (ADR 0019). */}}
+              value: {{ printf "%s,password=$(REDIS_PASSWORD)" $v | quote }}
+              {{- else }}
               value: {{ $v | quote }}
+              {{- end }}
             {{- end }}
           {{- end }}
           resources:
