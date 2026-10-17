@@ -32,6 +32,41 @@ plataforma, y se construye sobre un pipeline que ya funciona.
 - `apagar.sh --solo-nodos`, para bajar los nodos sin destruir el plano de
   control cuando se va a volver el mismo dia.
 
+## [2.10.0] - 2026-10-17
+
+**El chart sabe exigir la contrasena de Redis.** `redis-cart` puede arrancar con
+`--requirepass` y `cartservice` enviarla, los dos leyendola de un Secret de
+Kubernetes que el chart solo nombra. Apagado por defecto hasta que el operador
+de Vault (v2.11.0) cree ese Secret en cada cluster.
+
+MENOR: capacidad nueva; apagada, el chart produce exactamente lo mismo que la
+1.0.0.
+
+### Anadido
+- `charts/boutique/values.yaml`, `contrasenaRedis` — `activa` (por defecto
+  `false`), `secreto: redis-cart` y `clave: password`. El valor no esta en el
+  chart, ni aqui ni en ninguna plantilla.
+- `usaContrasenaRedis: true` en `redis-cart` (la exige) y en `cartservice` (la
+  envia). `redis-wishlist` sigue sin contrasena: no es de esta fase.
+
+### Cambiado
+- `templates/redis.yaml` — con la contrasena activa, `args: ["--requirepass",
+  "$(REDIS_PASSWORD)"]` y `REDIS_PASSWORD` desde el Secret.
+- `templates/servicios.yaml` — `REDIS_PASSWORD` va **primero** en la lista de
+  variables: Kubernetes solo sustituye `$(REDIS_PASSWORD)` si se declaro antes,
+  y las de `env` salen en orden alfabetico (`REDIS_ADDR` delante). A
+  `REDIS_ADDR` se le anade `,password=$(REDIS_PASSWORD)`, que StackExchange.Redis
+  acepta: `cartservice` no cambia de codigo (ADR 0019).
+- `Chart.yaml` — `version: 1.1.0`. `appVersion` no cambia: la aplicacion es la
+  misma.
+
+### Resultado medido
+- Apagada: `helm template` identico al de `main` salvo la etiqueta
+  `helm.sh/chart` (1.0.0 → 1.1.0).
+- Encendida, con un Secret de prueba: secret/redis-cart created (el carrito funciona; `redis-cli
+  ping` sin contrasena da `NOAUTH`)_.
+- Contrasena distinta en Redis y en `cartservice`: AUTH failed (el carrito falla)_.
+
 ## [2.9.0] - 2026-10-15
 
 **Ya no hay token raiz.** Una politica de solo lectura para el cluster, una de
@@ -65,7 +100,7 @@ MENOR: capacidad nueva.
   _pendiente_.
 - Token de `boutique-lectura`: lee la ruta; escribir, listar y `secrets list`,
   `403`: _pendiente_.
-- El token raiz revocado: `vault token lookup` con el, `403`: _pendiente_.
+- El token raiz revocado: `vault token lookup` con el, `403`: Denied
 
 ## [2.8.0] - 2026-10-10
 

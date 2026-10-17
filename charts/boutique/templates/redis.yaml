@@ -2,6 +2,8 @@
 Los dos Redis: uno del carrito (de Google) y uno de las listas (nuestro).
 Contenedor "redis", sonda TCP, y un emptyDir en /data porque el sistema de
 archivos raiz es de solo lectura. Sin volumen persistente a proposito.
+Con 'usaContrasenaRedis' y contrasenaRedis.activa, exige la contrasena del
+Secret (ADR 0019).
 */}}
 {{- range $r := .Values.redis }}
 {{- $ctx := dict "raiz" $ "nombre" $r.nombre }}
@@ -27,6 +29,20 @@ spec:
       containers:
         - name: redis
           image: redis:alpine
+          {{- if and $.Values.contrasenaRedis.activa $r.usaContrasenaRedis }}
+          {{- /* La imagen oficial antepone redis-server cuando el primer
+                 argumento empieza por '-'. El valor viene del Secret, nunca del
+                 chart, y se lee al arrancar: cambiarlo exige reiniciar el pod
+                 (y cartservice, que guarda la suya). Las sondas son TCP, asi
+                 que no la necesitan. */}}
+          args: ["--requirepass", "$(REDIS_PASSWORD)"]
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.contrasenaRedis.secreto }}
+                  key: {{ $.Values.contrasenaRedis.clave }}
+          {{- end }}
           securityContext:
             {{- toYaml $.Values.seguridad.contenedor | nindent 12 }}
           ports:
