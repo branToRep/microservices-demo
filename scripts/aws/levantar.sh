@@ -12,6 +12,10 @@
 #     de prueba: responde igual con credenciales canceladas por la SCP)
 #   - que kubectl apunte al cluster de AWS y no al de Docker Desktop
 #
+# Desde la v2.11.0 necesita tambien TU Vault, levantada y con tu usuario (ver
+# docs/OPERACION-VAULT.md): antes de desplegar, le dice en que cluster confiar.
+# Si esta sellada, pide las llaves por teclado.
+#
 # Tarda entre 12 y 18 minutos, casi todo esperando a que EKS cree el plano de
 # control. Se puede volver a correr sin miedo: Terraform solo crea lo que falta.
 # -----------------------------------------------------------------------------
@@ -24,7 +28,28 @@ paso() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 alto() { printf '\n\033[1;31mALTO:\033[0m %s\n' "$*" >&2; exit 1; }
 
 # --------------------------------------------------------------------------
-paso "1/7  Comprobando la configuracion del backend"
+paso "1/8  Comprobando lo que hace falta en esta maquina"
+
+# Todo de golpe y ANTES de crear nada: una herramienta que falta en el paso 6
+# deja un cluster cobrando mientras se instala.
+falta() {
+  case "$1" in
+    kubectl) echo "kubectl (la misma version menor que el cluster, ver variables.tf):
+         V=\$(curl -Ls https://dl.k8s.io/release/stable-1.34.txt)
+         curl -LO https://dl.k8s.io/release/\$V/bin/linux/amd64/kubectl
+         sudo install -m 0755 kubectl /usr/local/bin/kubectl && rm kubectl" ;;
+    helm) echo "Helm:
+         curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash" ;;
+    *) echo "'$1'. Ver ansible/README.md (Requisitos)." ;;
+  esac
+}
+for herramienta in terraform aws kubectl helm vault jq curl; do
+  command -v "$herramienta" >/dev/null || alto "Falta $(falta "$herramienta")"
+done
+echo "    ok"
+
+# --------------------------------------------------------------------------
+paso "2/8  Comprobando la configuracion del backend"
 
 if [ ! -f "$ENTORNO/backend.hcl" ]; then
   cat >&2 <<AYUDA
@@ -70,7 +95,7 @@ echo "    bucket: $BUCKET"
 echo "    region: $REGION"
 
 # --------------------------------------------------------------------------
-paso "2/7  Comprobando que las credenciales sirvan"
+paso "3/8  Comprobando que las credenciales sirvan"
 
 if ! aws s3 ls "s3://$BUCKET/" >/dev/null 2>&1; then
   cat >&2 <<AYUDA
@@ -92,19 +117,19 @@ fi
 echo "    ok"
 
 # --------------------------------------------------------------------------
-paso "3/7  Preparando Terraform"
+paso "4/8  Preparando Terraform"
 cd "$ENTORNO"
 terraform init -input=false -backend-config=backend.hcl
 
 # --------------------------------------------------------------------------
-paso "4/7  Creando la infraestructura (esto es lo que tarda)"
+paso "5/8  Creando la infraestructura (esto es lo que tarda)"
 terraform apply -auto-approve
 
 CLUSTER=$(terraform output -raw nombre_cluster)
 URL=$(terraform output -raw url_tienda)
 
 # --------------------------------------------------------------------------
-paso "5/7  Apuntando kubectl al cluster de AWS"
+paso "6/8  Apuntando kubectl al cluster de AWS"
 aws eks update-kubeconfig --region "$REGION" --name "$CLUSTER" >/dev/null
 
 CONTEXTO="$(kubectl config current-context)"
@@ -115,11 +140,14 @@ case "$CONTEXTO" in
 esac
 
 # --------------------------------------------------------------------------
-paso "6/7  Desplegando la tienda con Helm"
-cd "$RAIZ"
+paso "7/8  Avisando a Vault del cluster nuevo"
+# El emisor OIDC cambia con cada cluster (ADR 0020). Va antes de la tienda: el
+# Vault Secrets Operator entrara con el, y con el de ayer Vault lo rechaza.
+REGION="$REGION" CLUSTER="$CLUSTER" bash "$RAIZ/scripts/aws/avisar-a-vault.sh"
 
-command -v helm >/dev/null || alto "Hace falta Helm. Instalalo con:  brew install helm
-       El despliegue usa el chart de charts/boutique desde la v2.2.0."
+# --------------------------------------------------------------------------
+paso "8/8  Desplegando la tienda con Helm"
+cd "$RAIZ"
 
 # --atomic espera a que todo este listo y, si algo falla, revierte la release
 # entera. Sustituye al 'kubectl wait' de antes, que solo miraba y no arreglaba.
@@ -135,7 +163,7 @@ echo "    release desplegada:"
 helm list --filter '^boutique$' | sed 's/^/    /'
 
 # --------------------------------------------------------------------------
-paso "7/7  Esperando al balanceador"
+echo "    esperando al balanceador"
 # Los pods pueden estar listos y el ELB seguir marcando los nodos OutOfService:
 # sus comprobaciones de salud tardan hasta un minuto en dar el visto bueno.
 for _ in $(seq 1 40); do

@@ -39,3 +39,21 @@ vault_config_contrasena_nueva: "{{ lookup('ansible.builtin.env', 'VAULT_CONTRASE
 # Tokens de vida corta: una sesion de trabajo, no para siempre.
 vault_config_token_ttl: 1h
 vault_config_token_max_ttl: 8h
+
+# ------------------------- el metodo jwt del cluster -------------------------
+# ADR 0020. Vault valida los tokens de la ServiceAccount lector-vault con las
+# llaves publicas del emisor OIDC de EKS; no llama nunca al cluster.
+#
+# Aqui va SOLO lo que no cambia. El emisor cambia en cada sesion, porque el
+# cluster se recrea: lo escribe scripts/aws/avisar-a-vault.sh en auth/eks/config.
+vault_config_jwt_ruta: eks
+vault_config_jwt_rol: boutique
+vault_config_jwt_rol_config:
+  role_type: jwt
+  bound_audiences: [vault]
+  bound_subject: "system:serviceaccount:default:lector-vault"
+  user_claim: sub
+  token_policies: [boutique-lectura]
+  # En segundos, que es como Vault lo devuelve al leer el rol: asi la
+  # comparacion de la segunda corrida da igual y no reescribe nada.
+  token_ttl: 600

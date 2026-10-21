@@ -130,6 +130,19 @@ Vault), activa el método `userpass` y crea tu usuario con `operador`. Las
 políticas viven en `ansible/roles/vault_config/files/politicas/`: si se editan
 ahí, la siguiente corrida las reescribe en Vault.
 
+Tres trampas que ya costaron una tarde:
+
+- **`read -rs NOMBRE` lleva el nombre de la variable tal cual.** La contraseña
+  se pega *después*, en la línea vacía que queda esperando (no se ve nada: es
+  lo normal). Pegarla en lugar del nombre la deja en el historial.
+- **Contraseña solo con letras y números.** Un `$`, `!` o comilla la cambia la
+  shell sin avisar. `echo ${#VAULT_CONTRASENA_NUEVA}` da la longitud sin
+  mostrarla: tiene que ser 16 o más.
+- **El usuario se crea en la PRIMERA corrida y después no se toca.** Si se
+  repite con otra contraseña, Vault se queda con la primera. Por eso, antes de
+  seguir, comprobar que el usuario existe (`vault list auth/userpass/users`) y
+  hacer 5.2 en el acto, con el raíz todavía vivo.
+
 ### 5.2 Entrar como tú, y comprobar que basta
 
 ```bash
@@ -190,3 +203,33 @@ para nada del día a día.
 
 `https://<ip>:8200`, método **Username**. La captura del portafolio va con tu
 usuario arriba a la derecha, no con *root*.
+
+---
+
+## 6. Cada sesión con el clúster: decirle a Vault en cuál confiar (ADR 0020)
+
+El clúster entra a Vault con el método `jwt` en `auth/eks/`: Vault comprueba la
+firma de los tokens de su ServiceAccount `lector-vault` con las llaves públicas
+del emisor OIDC de EKS. Ese emisor **cambia cada vez que el clúster se crea**.
+
+- **Una vez:** el método y el rol `boutique` los pone `configurar-vault.yml`
+  (sección 3), con tu usuario. Es configuración permanente.
+- **Cada sesión:** el emisor del clúster de hoy lo escribe
+  `scripts/aws/avisar-a-vault.sh`. Lo llama `levantar.sh` antes de desplegar;
+  con el clúster ya levantado se puede correr solo:
+
+```bash
+bash scripts/aws/avisar-a-vault.sh
+#   Vault desellada en https://<ip>:8200
+#   Sesion de userpass-<tu-usuario>
+#   Vault confia en el cluster de hoy: https://oidc.eks.us-east-1.amazonaws.com/id/...
+```
+
+Si Vault está sellada, pide dos llaves por teclado; si no hay sesión tuya, te
+pide entrar con tu usuario. Con el emisor de ayer, Vault rechaza al clúster de
+hoy, y el carrito no arranca: el fallo se ve, no pasa en silencio.
+
+El rol solo admite tokens con audiencia `vault` y sujeto
+`system:serviceaccount:default:lector-vault`, y da `boutique-lectura` durante
+10 minutos. Otra ServiceAccount del mismo clúster no entra.
+
