@@ -182,9 +182,13 @@ que Vault apunta el cluster.
 - **Rotar interrumpe el carrito unos segundos.** Los dos deployments se
   reinician a la vez, y los carritos se pierden (Redis sin volumen, a
   proposito, desde la v2.2.0).
-- **Esta por medir** que Vault pueda descargar las llaves del emisor de EKS
-  desde la instancia. Es HTTPS publico y deberia funcionar; se comprueba en el
-  ticket que configura el metodo `jwt`, y se anota aqui.
+- **Vault llega a las llaves del emisor de EKS.** Medido el 2026-10-17: desde
+  la instancia, por el tunel SSM, `curl` al
+  `<emisor>/.well-known/openid-configuration` del cluster de esa sesion
+  devolvio `200`. Es HTTPS publico y la salida 443 ya estaba abierta (v2.3.0).
+  Ademas, `vault write auth/eks/config` lo vuelve a comprobar en cada sesion:
+  si Vault no pudiera descargarlas, el fallo sale ahi y no cuando entra el
+  cluster (v2.11.0).
 
 ## Lo que la 0019 sigue diciendo y no cambia
 La EC2 en su propio entorno y su propia VPC, la IP elastica, TLS con CA propia,

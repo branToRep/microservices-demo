@@ -1,0 +1,57 @@
+---
+# ----------------------- el metodo jwt del cluster (ADR 0020) ----------------
+# El metodo y el rol: lo que no cambia de una sesion a otra. Sin configurar el
+# emisor, nadie puede entrar todavia; eso lo hace avisar-a-vault.sh con el
+# cluster de cada sesion.
+- name: Leer los metodos de autenticacion activos (jwt)
+  ansible.builtin.uri:
+    url: "{{ vault_config_addr }}/v1/sys/auth"
+    ca_path: "{{ vault_config_cacert }}"
+    headers:
+      X-Vault-Token: "{{ vault_config_token }}"
+  register: vault_config_metodos_jwt
+  check_mode: false
+
+- name: Activar el metodo jwt para el cluster
+  ansible.builtin.uri:
+    url: "{{ vault_config_addr }}/v1/sys/auth/{{ vault_config_jwt_ruta }}"
+    method: POST
+    ca_path: "{{ vault_config_cacert }}"
+    headers:
+      X-Vault-Token: "{{ vault_config_token }}"
+    body_format: json
+    body:
+      type: jwt
+      description: La ServiceAccount lector-vault del cluster de EKS de esta cuenta
+    status_code: [200, 204]
+  when: (vault_config_jwt_ruta ~ '/') not in (vault_config_metodos_jwt.json.data | default(vault_config_metodos_jwt.json))
+  changed_when: true
+
+# El rol se compara campo a campo con defaults/main.yml y solo se escribe si
+# difiere, igual que las politicas: el repositorio manda.
+- name: Leer el rol del cluster
+  ansible.builtin.uri:
+    url: "{{ vault_config_addr }}/v1/auth/{{ vault_config_jwt_ruta }}/role/{{ vault_config_jwt_rol }}"
+    ca_path: "{{ vault_config_cacert }}"
+    headers:
+      X-Vault-Token: "{{ vault_config_token }}"
+    status_code: [200, 404]
+  register: vault_config_rol_jwt
+  check_mode: false
+
+- name: Escribir el rol del cluster
+  ansible.builtin.uri:
+    url: "{{ vault_config_addr }}/v1/auth/{{ vault_config_jwt_ruta }}/role/{{ vault_config_jwt_rol }}"
+    method: POST
+    ca_path: "{{ vault_config_cacert }}"
+    headers:
+      X-Vault-Token: "{{ vault_config_token }}"
+    body_format: json
+    body: "{{ vault_config_jwt_rol_config }}"
+    status_code: [200, 204]
+  vars:
+    vault_config_claves_jwt: "{{ vault_config_jwt_rol_config.keys() | list }}"
+    vault_config_rol_jwt_actual: >-
+      {{ dict(vault_config_claves_jwt | zip(vault_config_claves_jwt | map('extract', vault_config_rol_jwt.json.data))) }}
+  when: vault_config_rol_jwt.status == 404 or vault_config_rol_jwt_actual != vault_config_jwt_rol_config
+  changed_when: true

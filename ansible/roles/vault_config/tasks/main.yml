@@ -134,6 +134,9 @@
 - name: Politicas ACL
   ansible.builtin.import_tasks: politicas.yml
 
+- name: El metodo jwt del cluster
+  ansible.builtin.import_tasks: jwt.yml
+
 - name: Acceso personal con usuario y contrasena
   ansible.builtin.include_tasks: usuarios.yml
   when: vault_config_usuario | length > 0
@@ -146,5 +149,7 @@
       {{ vault_config_ruta_kv }}/{{ vault_config_ruta_redis }}
       ({{ 'ya existia, sin cambios' if vault_config_redis.status == 200 else 'creada ahora' }}).
       Politicas: {{ vault_config_politicas | join(', ') }}.
+      Metodo jwt en auth/{{ vault_config_jwt_ruta }}/ con el rol {{ vault_config_jwt_rol }}
+      (el emisor del cluster lo escribe scripts/aws/avisar-a-vault.sh).
       {{ ('Usuario ' ~ vault_config_usuario ~ (' (ya existia).' if vault_config_usuario_actual.status == 200 else ' (creado ahora).'))
          if vault_config_usuario | length > 0 else 'Usuarios: sin cambios (VAULT_USUARIO vacio).' }}

@@ -32,6 +32,44 @@ plataforma, y se construye sobre un pipeline que ya funciona.
 - `apagar.sh --solo-nodos`, para bajar los nodos sin destruir el plano de
   control cuando se va a volver el mismo dia.
 
+## [2.11.0] - 2026-10-20
+
+**Vault ya sabe reconocer al cluster.** El metodo `jwt` en `auth/eks/` y el rol
+`boutique`: un token de la ServiceAccount `lector-vault`, firmado por el emisor
+OIDC de EKS, entra con `boutique-lectura` durante 10 minutos, y ninguna otra
+cuenta entra. `levantar.sh` le dice a Vault, en cada sesion, cual es el emisor
+del cluster de hoy. Todavia no lo usa nadie: el operador que entra con ese token
+es la v2.12.0.
+
+MENOR: capacidad nueva. `levantar.sh` necesita desde ahora la Vault del
+operador levantada y su usuario.
+
+### Anadido
+- `ansible/roles/vault_config/tasks/jwt.yml` — el metodo y el rol, comparados
+  campo a campo con `defaults/main.yml` y escritos solo si difieren
+  (`changed=0` en la segunda corrida).
+- `scripts/aws/avisar-a-vault.sh` — comprueba que Vault responda (si esta
+  sellada, pide las llaves por teclado), que haya una sesion del operador (si
+  no, `vault login` con su usuario, sin imprimir el token) y escribe el emisor
+  del cluster en `auth/eks/config`. Se puede correr solo, con el cluster ya
+  levantado.
+- `docs/OPERACION-VAULT.md`, seccion 6.
+
+### Cambiado
+- `scripts/aws/levantar.sh` — ocho pasos. El primero comprueba **todas** las
+  herramientas (`kubectl`, `helm`, `vault`, `jq`...) antes de crear nada: una que
+  faltaba en el paso 5 dejaba un cluster cobrando mientras se instalaba. El
+  septimo es `avisar-a-vault.sh`, antes de desplegar la tienda.
+- `docs/OPERACION-VAULT.md`, 5.1 — las tres trampas de crear el usuario.
+- `docs/adr/0020` — medido: Vault llega a las llaves del emisor de EKS.
+
+### Resultado medido
+- `configurar-vault.yml` con el usuario: changed=2 y changed=0 al
+  repetir.
+- Un token de `lector-vault` con audiencia `vault` entra con
+  `boutique-lectura` y lee la ruta: ["password"].
+- Otra ServiceAccount, u otra audiencia: rechazadas: Error writing data to secret/data/boutique/redis-cart: Error making API request.
+
 ## [2.10.0] - 2026-10-17
 
 **El chart sabe exigir la contrasena de Redis.** `redis-cart` puede arrancar con
