@@ -233,3 +233,36 @@ El rol solo admite tokens con audiencia `vault` y sujeto
 `system:serviceaccount:default:lector-vault`, y da `boutique-lectura` durante
 10 minutos. Otra ServiceAccount del mismo clúster no entra.
 
+---
+
+## 7. Rotar la contraseña de Redis, sin redesplegar (ADR 0020)
+
+Desde la v2.12.0 el clúster lee la contraseña él solo: el Vault Secrets Operator
+entra con la ServiceAccount `lector-vault` (sección 6), vuelve a leer
+`secret/boutique/redis-cart` cada minuto y, si cambió, actualiza el Secret
+`redis-cart` y reinicia `redis-cart` y `cartservice`.
+
+Rotar es escribir un valor nuevo en Vault. Nada más: ni Helm, ni el pipeline.
+
+```bash
+vault kv put secret/boutique/redis-cart password="$(openssl rand -hex 16)"
+#   version 2. El valor lo genera openssl: no se ve ni queda en el historial.
+kubectl get pods -l 'app in (redis-cart,cartservice)' -w
+#   en un minuto o menos, los dos se reinician solos (Ctrl+C para salir)
+kubectl describe vaultstaticsecret redis-cart | tail -n 5
+#   eventos: el Secret sincronizado y el reinicio de los dos deployments
+```
+
+Solo letras y números (`openssl rand -hex`): `cartservice` recibe la contraseña
+dentro de una cadena de conexión, donde una coma la partiría.
+
+El carrito se vacía (Redis sin volumen, a propósito) y vuelve a funcionar en
+cuanto los dos pods están listos.
+
+**Volver a la anterior**, si la nueva diera problemas: KV v2 guarda las
+versiones.
+
+```bash
+vault kv rollback -version=1 secret/boutique/redis-cart   # crea una version 3 igual a la 1
+```
+

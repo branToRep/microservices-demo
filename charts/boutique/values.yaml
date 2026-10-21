@@ -184,22 +184,49 @@ redis:
 
 # -----------------------------------------------------------------------------
 # La contrasena de redis-cart (ADR 0019). El chart NO lleva el valor, ni aqui ni
-# en ninguna plantilla: solo el NOMBRE del Secret de Kubernetes donde vive. Quien
-# lo llena es otro (hoy, una persona a mano para probar; en la v2.11.0, el
-# operador de Vault leyendo secret/boutique/redis-cart).
+# en ninguna plantilla: solo el NOMBRE del Secret de Kubernetes donde vive. Lo
+# llena el Vault Secrets Operator leyendo secret/boutique/redis-cart (ver 'vault'
+# abajo).
 #
-# Apagada por defecto, y es deliberado: encendida sin el Secret, los pods de
-# redis-cart y cartservice no arrancan (CreateContainerConfigError) y el
-# despliegue entero se revierte. Hasta que el operador cree el Secret en cada
-# cluster nuevo, encenderla romperia levantar.sh y el pipeline.
+# Encendida por defecto desde la 1.2.0 del chart. Apagarla solo tiene sentido
+# junto con vault.activa=false, para desplegar en un cluster sin Vault.
 #
 # Afecta a las entradas con 'usaContrasenaRedis: true': redis-cart (la exige) y
 # cartservice (la envia). redis-wishlist sigue sin contrasena: no es de la fase.
 # -----------------------------------------------------------------------------
 contrasenaRedis:
-  activa: false
+  activa: true
   secreto: redis-cart
   clave: password
+
+# -----------------------------------------------------------------------------
+# Quien llena ese Secret: el Vault Secrets Operator (ADR 0020).
+#
+# El chart pone lo que es igual en cualquier cuenta: la ServiceAccount con la
+# que el cluster entra a Vault, como entra (VaultAuth) y que lee
+# (VaultStaticSecret). Lo que cambia de un operador a otro (la direccion de SU
+# Vault y su CA) NO va aqui: es la VaultConnection que crea
+# scripts/aws/conectar-operador-vault.sh. Asi el pipeline despliega con el mismo
+# comando de siempre sin saber a que Vault apunta el cluster.
+#
+# Requiere el operador instalado en el cluster (lo instala levantar.sh): sin sus
+# CRD, Helm rechaza estas plantillas.
+# -----------------------------------------------------------------------------
+vault:
+  activa: true
+  # La VaultConnection que crea conectar-operador-vault.sh, en este namespace.
+  conexion: vault
+  # Tienen que coincidir con el rol de Vault (ansible/roles/vault_config/defaults).
+  metodo: eks
+  rol: boutique
+  cuentaServicio: lector-vault
+  audiencia: vault
+  # Donde vive el secreto: motor KV v2 en secret/, ruta boutique/redis-cart.
+  motorKV: secret
+  ruta: boutique/redis-cart
+  # Cada cuanto vuelve a leer. Si el valor cambio, actualiza el Secret y
+  # reinicia los deployments que lo usan: rotar no exige redesplegar.
+  refresco: 60s
 
 # -----------------------------------------------------------------------------
 # El frontend. Aparte porque su sonda es HTTP, no gRPC, y porque necesita un

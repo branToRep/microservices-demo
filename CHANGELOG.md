@@ -32,6 +32,48 @@ plataforma, y se construye sobre un pipeline que ya funciona.
 - `apagar.sh --solo-nodos`, para bajar los nodos sin destruir el plano de
   control cuando se va a volver el mismo dia.
 
+## [2.12.0] - 2026-10-20
+
+**El cluster lee la contrasena de Vault.** El Vault Secrets Operator entra con
+la ServiceAccount `lector-vault`, lee `secret/boutique/redis-cart`, crea el
+Secret `redis-cart` y lo mantiene al dia. `redis-cart` exige la contrasena desde
+el primer despliegue. Rotarla es escribir en Vault: en un minuto los pods se
+reinician solos, sin Helm ni pipeline (Pasos 9 y 10, segun el ADR 0020).
+
+MENOR: capacidad nueva. El chart **requiere** desde ahora el operador en el
+cluster (lo instala `levantar.sh`); para desplegar sin Vault,
+`--set vault.activa=false,contrasenaRedis.activa=false`.
+
+### Anadido
+- `charts/boutique/templates/vault.yaml` — la ServiceAccount `lector-vault`, el
+  `VaultAuth` (metodo `jwt`, `auth/eks/`, rol `boutique`, audiencia `vault`) y el
+  `VaultStaticSecret` (lee cada 60 s; si cambia, reinicia los dos deployments
+  que usan la contrasena).
+- `charts/boutique/values.yaml`, `vault` — los nombres que tienen que coincidir
+  con el rol de Vault. Ni direcciones ni secretos.
+- `scripts/aws/conectar-operador-vault.sh` — el operador como release aparte,
+  version fija `1.6.0`; la CA de la Vault del operador en el Secret `vault-ca`; y
+  la `VaultConnection` `vault` con su direccion, verificando TLS.
+- `docs/OPERACION-VAULT.md`, seccion 7 — rotar, y volver a la version anterior.
+
+### Cambiado
+- `contrasenaRedis.activa` — `true` por defecto.
+- `Chart.yaml` — `version: 1.2.0`.
+- `scripts/aws/levantar.sh` — nueve pasos: el octavo conecta el cluster a Vault,
+  antes de la tienda. Si el despliegue falla, dice donde mirar si el Secret no
+  llego.
+
+### Sin cambios, a proposito
+- `.github/workflows/publicar-y-desplegar.yml` — el pipeline despliega con el
+  mismo comando. No pide tokens, no lee secretos y no sabe a que Vault apunta el
+  cluster.
+
+### Resultado medido
+- `VaultStaticSecret` sincronizado y el carrito funcionando:  Normal  SecretSynced 80s (x2 over 80s)  VaultStaticSecret  Secret synced.
+- La auditoria registra la lectura de `lector-vault`: {"hora":"2026-10-21T00:45:29.287646858Z","quien":"eks-system:serviceaccount:default:lector-vault","ruta":"secret/data/boutique/redis-cart"}.
+- Rotacion: valor nuevo en Vault, pods reiniciados en 80 s, carrito
+  vivo: yes.
+
 ## [2.11.0] - 2026-10-20
 
 **Vault ya sabe reconocer al cluster.** El metodo `jwt` en `auth/eks/` y el rol

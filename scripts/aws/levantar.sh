@@ -14,7 +14,8 @@
 #
 # Desde la v2.11.0 necesita tambien TU Vault, levantada y con tu usuario (ver
 # docs/OPERACION-VAULT.md): antes de desplegar, le dice en que cluster confiar.
-# Si esta sellada, pide las llaves por teclado.
+# Si esta sellada, pide las llaves por teclado. Desde la v2.12.0 instala ademas
+# el Vault Secrets Operator, que es quien lee la contrasena de Redis de Vault.
 #
 # Tarda entre 12 y 18 minutos, casi todo esperando a que EKS cree el plano de
 # control. Se puede volver a correr sin miedo: Terraform solo crea lo que falta.
@@ -28,7 +29,7 @@ paso() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 alto() { printf '\n\033[1;31mALTO:\033[0m %s\n' "$*" >&2; exit 1; }
 
 # --------------------------------------------------------------------------
-paso "1/8  Comprobando lo que hace falta en esta maquina"
+paso "1/9  Comprobando lo que hace falta en esta maquina"
 
 # Todo de golpe y ANTES de crear nada: una herramienta que falta en el paso 6
 # deja un cluster cobrando mientras se instala.
@@ -49,7 +50,7 @@ done
 echo "    ok"
 
 # --------------------------------------------------------------------------
-paso "2/8  Comprobando la configuracion del backend"
+paso "2/9  Comprobando la configuracion del backend"
 
 if [ ! -f "$ENTORNO/backend.hcl" ]; then
   cat >&2 <<AYUDA
@@ -95,7 +96,7 @@ echo "    bucket: $BUCKET"
 echo "    region: $REGION"
 
 # --------------------------------------------------------------------------
-paso "3/8  Comprobando que las credenciales sirvan"
+paso "3/9  Comprobando que las credenciales sirvan"
 
 if ! aws s3 ls "s3://$BUCKET/" >/dev/null 2>&1; then
   cat >&2 <<AYUDA
@@ -117,19 +118,19 @@ fi
 echo "    ok"
 
 # --------------------------------------------------------------------------
-paso "4/8  Preparando Terraform"
+paso "4/9  Preparando Terraform"
 cd "$ENTORNO"
 terraform init -input=false -backend-config=backend.hcl
 
 # --------------------------------------------------------------------------
-paso "5/8  Creando la infraestructura (esto es lo que tarda)"
+paso "5/9  Creando la infraestructura (esto es lo que tarda)"
 terraform apply -auto-approve
 
 CLUSTER=$(terraform output -raw nombre_cluster)
 URL=$(terraform output -raw url_tienda)
 
 # --------------------------------------------------------------------------
-paso "6/8  Apuntando kubectl al cluster de AWS"
+paso "6/9  Apuntando kubectl al cluster de AWS"
 aws eks update-kubeconfig --region "$REGION" --name "$CLUSTER" >/dev/null
 
 CONTEXTO="$(kubectl config current-context)"
@@ -140,13 +141,19 @@ case "$CONTEXTO" in
 esac
 
 # --------------------------------------------------------------------------
-paso "7/8  Avisando a Vault del cluster nuevo"
+paso "7/9  Avisando a Vault del cluster nuevo"
 # El emisor OIDC cambia con cada cluster (ADR 0020). Va antes de la tienda: el
 # Vault Secrets Operator entrara con el, y con el de ayer Vault lo rechaza.
 REGION="$REGION" CLUSTER="$CLUSTER" bash "$RAIZ/scripts/aws/avisar-a-vault.sh"
 
 # --------------------------------------------------------------------------
-paso "8/8  Desplegando la tienda con Helm"
+paso "8/9  Conectando el cluster a Vault"
+# El operador y la VaultConnection (direccion y CA de TU Vault). Va antes de la
+# tienda: el chart declara recursos del operador, y sin sus CRD Helm los rechaza.
+bash "$RAIZ/scripts/aws/conectar-operador-vault.sh"
+
+# --------------------------------------------------------------------------
+paso "9/9  Desplegando la tienda con Helm"
 cd "$RAIZ"
 
 # --atomic espera a que todo este listo y, si algo falla, revierte la release
@@ -157,6 +164,11 @@ helm upgrade --install boutique charts/boutique --atomic --timeout 8m || {
   echo "  kubectl get pods"
   echo "  kubectl describe pod <el-que-falle>"
   echo "  helm history boutique"
+  echo
+  echo "Si son redis-cart y cartservice (CreateContainerConfigError), el Secret"
+  echo "redis-cart no llego de Vault. El motivo esta en los eventos:"
+  echo "  kubectl describe vaultstaticsecret redis-cart"
+  echo "  kubectl describe vaultauth lector-vault"
   exit 1
 }
 echo "    release desplegada:"
