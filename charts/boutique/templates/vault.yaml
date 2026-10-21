@@ -1,0 +1,78 @@
+{{/*
+---------------------------------------------------------------------------
+Como entra el cluster a Vault y que lee (ADR 0020). Lo aplica el Vault Secrets
+Operator, que instala levantar.sh como release aparte.
+
+  lector-vault (ServiceAccount)  la identidad. El operador pide a Kubernetes un
+                                 token para ella con audiencia 'vault'; Vault
+                                 lo valida con las llaves publicas del emisor
+                                 OIDC de EKS y le da boutique-lectura, 10 min.
+  VaultAuth                      metodo jwt en auth/eks/, rol boutique.
+  VaultStaticSecret              lee secret/boutique/redis-cart y lo escribe en
+                                 el Secret redis-cart. Si cambia, reinicia
+                                 redis-cart y cartservice.
+
+La direccion de la Vault y su CA no estan aqui: son la VaultConnection de cada
+operador (scripts/aws/conectar-operador-vault.sh).
+---------------------------------------------------------------------------
+*/}}
+{{- if .Values.vault.activa }}
+{{- $ctx := dict "raiz" $ "nombre" .Values.vault.cuentaServicio }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.vault.cuentaServicio }}
+  labels:
+    {{- include "boutique.etiquetas" $ctx | nindent 4 }}
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: {{ .Values.vault.cuentaServicio }}
+  labels:
+    {{- include "boutique.etiquetas" $ctx | nindent 4 }}
+spec:
+  vaultConnectionRef: {{ .Values.vault.conexion }}
+  method: jwt
+  mount: {{ .Values.vault.metodo }}
+  jwt:
+    role: {{ .Values.vault.rol }}
+    serviceAccount: {{ .Values.vault.cuentaServicio }}
+    audiences:
+      - {{ .Values.vault.audiencia }}
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: {{ .Values.contrasenaRedis.secreto }}
+  labels:
+    {{- include "boutique.etiquetas" $ctx | nindent 4 }}
+spec:
+  vaultAuthRef: {{ .Values.vault.cuentaServicio }}
+  type: kv-v2
+  mount: {{ .Values.vault.motorKV }}
+  path: {{ .Values.vault.ruta }}
+  refreshAfter: {{ .Values.vault.refresco }}
+  destination:
+    name: {{ .Values.contrasenaRedis.secreto }}
+    # El operador CREA el Secret y es su dueno: si se borra el
+    # VaultStaticSecret (helm uninstall), el Secret se va con el.
+    create: true
+  {{- /* Los dos que leen la contrasena al arrancar (v2.10.0): con el valor
+         nuevo en el Secret y no reiniciados, cartservice seguiria con la vieja
+         y Redis la rechazaria. */}}
+  rolloutRestartTargets:
+    {{- range $s := .Values.redis }}
+    {{- if $s.usaContrasenaRedis }}
+    - kind: Deployment
+      name: {{ $s.nombre }}
+    {{- end }}
+    {{- end }}
+    {{- range $s := .Values.servicios }}
+    {{- if $s.usaContrasenaRedis }}
+    - kind: Deployment
+      name: {{ $s.nombre }}
+    {{- end }}
+    {{- end }}
+{{- end }}
