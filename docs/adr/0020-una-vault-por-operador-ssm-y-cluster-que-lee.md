@@ -224,25 +224,28 @@ Redis sin cambios de codigo.
 - **El secreto ya no pasa por GitHub.** Ni por sus logs ni por sus runners.
 - **Si Vault se sella a media sesion, la tienda sigue funcionando** con el
   ultimo Secret sincronizado; lo que se detiene es la rotacion. En un arranque
-  en frio, en cambio, sin Vault no hay tienda, y se ve.
+  en frio, en cambio, sin Vault no hay tienda, y se ve. Medido el 2026-10-22
+  (`docs/PRUEBAS-DE-RESILIENCIA.md`).
 - **`levantar.sh` crece**: desellar, avisar a Vault del emisor nuevo, instalar el
   VSO y la `VaultConnection`. Es el precio de no depender del pipeline.
 - **El clon limpio se reproduce entero en otra cuenta.** Quien clona levanta su
   Vault, genera sus llaves y escribe su secreto. Ya no hay nada compartido que
   pedirle a nadie.
 
-## Como se va a comprobar
-Sustituye a la tabla de la 0019.
+## Como se comprobo
+Sustituye a la tabla de la 0019. Todas las filas estan medidas; el detalle de
+cada una, en `CHANGELOG.md`, en la version indicada.
 
-| Comprobacion | Evidencia |
-|---|---|
-| Ansible es idempotente | segunda corrida con `changed=0`, despues de destruir y recrear `envs/vault` |
-| No hay puerto 22 | el grupo de seguridad con una sola regla, y Ansible entrando igual |
-| La UI es accesible y segura | captura en `https://<ip>:8200` con un usuario no raiz |
-| La politica es de solo lectura | `vault policy read boutique-lectura` |
-| El cluster lee de Vault | el `VaultStaticSecret` sincronizado y la linea de auditoria con `lector-vault` |
-| Rotacion sin redesplegar | se cambia el valor en Vault; en un minuto los pods se reinician y el carrito sigue vivo |
-| Otra ServiceAccount no puede leer | un pod con otra cuenta de servicio, rechazado por Vault |
-| Vault sellado | la tienda sigue; un arranque en frio falla con el motivo a la vista |
-| Politica cambiada | se le quita `read`: el VSO registra `permission denied` y el Secret no cambia |
-| Contrasena incorrecta | captura del carrito roto, y vivo con la buena |
+| Comprobacion | Evidencia | Resultado |
+|---|---|---|
+| Ansible es idempotente | segunda corrida con `changed=0`, despues de destruir y recrear `envs/vault` | cumple: `changed=0` en la cuenta nueva (v2.7.0, `docs/PRUEBA-DE-FUEGO.md`) |
+| No hay puerto 22 | el grupo de seguridad con una sola regla, y Ansible entrando igual | cumple: `ssh` por SSM devuelve `ubuntu` sin regla para el 22 (v2.3.0) |
+| La UI es accesible y segura | captura en `https://<ip>:8200` con un usuario no raiz | cumple: UI por TLS con la CA propia, usuario `userpass`, raiz revocado (v2.8.0, v2.9.0) |
+| La politica es de solo lectura | `vault policy read boutique-lectura` | cumple: lee la ruta; escribir, listar y ver motores, `403` (v2.9.0) |
+| El cluster lee de Vault | el `VaultStaticSecret` sincronizado y la linea de auditoria con `lector-vault` | cumple: `Secret synced` y `eks-system:serviceaccount:default:lector-vault` leyendo la ruta (v2.12.0) |
+| Rotacion sin redesplegar | se cambia el valor en Vault; en un minuto los pods se reinician y el carrito sigue vivo | cumple: pods reiniciados en 80 s, sin revision nueva en `helm history` (v2.12.0) |
+| Otra ServiceAccount no puede leer | un pod con otra cuenta de servicio, rechazado por Vault | cumple: rechazadas otra ServiceAccount y otra audiencia (v2.11.0) |
+| Vault sellado | la tienda sigue; un arranque en frio falla con el motivo a la vista | cumple: la tienda sigue con Vault detenida y sellada; `levantar.sh` se detiene en el paso 7 (v2.12.1, `docs/PRUEBAS-DE-RESILIENCIA.md`) |
+| El token caduca | el operador pide otro solo; el pipeline no lleva ninguno | cumple: tras mas de 10 min sin Vault, login nuevo de `lector-vault` al desellar (v2.12.1) |
+| Politica cambiada | se le quita `read`: el VSO registra `permission denied` y el Secret no cambia | cumple: `permission denied`, pods sin reiniciar; Ansible la devuelve con `changed=1` (v2.12.1) |
+| Contrasena incorrecta | captura del carrito roto, y vivo con la buena | cumple: `AUTH failed`, y vuelve al reiniciar `cartservice` (v2.10.0) |
