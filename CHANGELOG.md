@@ -8,7 +8,7 @@ La convencion concreta de este repositorio esta en [`docs/VERSIONADO.md`](docs/V
 
 ## [Sin publicar]
 
-La Fase III esta cerrada en la 2.12.1: Vault como unica fuente del secreto de
+La Fase III esta cerrada en la 2.12.2: Vault como unica fuente del secreto de
 Redis, configurada con Ansible, leida por el propio cluster y probada contra
 fallos (`docs/PORTAFOLIO-FASE-III.md`). Lo que queda es producto, sin numero
 de version asignado: se numera al empezarlo, segun `docs/VERSIONADO.md`.
@@ -34,6 +34,23 @@ de version asignado: se numera al empezarlo, segun `docs/VERSIONADO.md`.
 - Desellar con AWS KMS (*auto-unseal*) en vez de llaves por teclado. Hoy no se
   puede: el laboratorio no deja crear el rol de IAM que lo autorizaria.
 
+## [2.12.2] - 2026-10-26
+
+**Un cambio solo al chart vuelve a desplegar.** *Publicar y desplegar* filtra por
+rutas, y la lista se habia quedado en la 1.x: incluia `kubernetes-manifests/**`
+y no `charts/**`, aunque desde la 2.2.0 se despliega con el chart.
+
+PARCHE: se corrige algo que ya estaba.
+
+### Corregido
+- `.github/workflows/publicar-y-desplegar.yml` — `charts/**` en vez de
+  `kubernetes-manifests/**`. La cabecera explica que rutas lo disparan y por que.
+- `docs/infra.md` — el `nodePort` del frontend y el comando de despliegue
+  apuntaban todavia a `kubernetes-manifests/`.
+
+### Resultado medido
+- El merge de este PR dispara *Publicar y desplegar* (toca el propio workflow):
+  _pendiente (enlace a la corrida y su resultado)_.
 ## [2.12.1] - 2026-10-22
 
 **Las pruebas de resiliencia** (Paso 11 de la lamina). Se rompio Vault a
@@ -1054,7 +1071,8 @@ aplicacion y no como un cambio de plataforma.
 - El nombre del bucket del estado esta escrito a fuego en `backend.tf`. En otra
   computadora hay que cambiarlo a mano; se arregla en la 1.1.0.
 
-[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v2.12.1...HEAD
+[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v2.12.2...HEAD
+[2.12.2]: https://github.com/branToRep/microservices-demo/compare/v2.12.1...v2.12.2
 [2.12.1]: https://github.com/branToRep/microservices-demo/compare/v2.12.0...v2.12.1
 [2.12.0]: https://github.com/branToRep/microservices-demo/compare/v2.11.0...v2.12.0
 [2.11.0]: https://github.com/branToRep/microservices-demo/compare/v2.10.0...v2.11.0

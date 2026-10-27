@@ -31,6 +31,13 @@
 #
 # NO necesita ningun secreto. El GITHUB_TOKEN que GitHub genera para cada
 # ejecucion basta, con el permiso `packages: write` de abajo.
+#
+# CUANDO CORRE
+# Solo cuando cambia algo que se despliega: el codigo de nuestras dos imagenes,
+# sus protos, el chart o este archivo. Un merge que solo toca documentacion,
+# Terraform o Ansible no redespliega nada. Hasta la v2.12.2 la lista incluia
+# 'kubernetes-manifests/**' y no 'charts/**': desde la v2.2.0 se despliega con
+# el chart, asi que un cambio solo al chart no llegaba al cluster.
 # -----------------------------------------------------------------------------
 name: Publicar y desplegar
 
@@ -41,7 +48,7 @@ on:
       - 'src/frontend/**'
       - 'src/wishlistservice/**'
       - 'protos/**'
-      - 'kubernetes-manifests/**'
+      - 'charts/**'
       - '.github/workflows/publicar-y-desplegar.yml'
   workflow_dispatch:
 

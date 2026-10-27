@@ -166,11 +166,11 @@ ajustar y con qué valor por defecto.
 | `version_kubernetes` | `1.34` | fijada: con `null`, EKS elegiría otra en seis meses |
 | `tipo_instancia` | `t3.medium` | el laboratorio no pasa de `large` |
 | `numero_nodos` | `2` | poner a `0` apaga sin destruir |
-| `nodeport_frontend` | `30080` | **tiene que coincidir con el manifiesto** |
+| `nodeport_frontend` | `30080` | **tiene que coincidir con el chart** |
 
 Las dos últimas filas son las que más se tocan en el día a día, y la última es
-la que más duele si se desincroniza: si cambias el `nodePort` en
-`kubernetes-manifests/frontend.yaml` y no aquí, el balanceador comprueba un
+la que más duele si se desincroniza: si cambias `frontend.nodePort` en
+`charts/boutique/values.yaml` y no aquí, el balanceador comprueba un
 puerto donde no escucha nadie, los nodos salen `OutOfService` y la tienda
 devuelve `000`. El síntoma no menciona el puerto por ninguna parte.
 
@@ -438,12 +438,13 @@ terraform destroy   # lo deshace, en orden inverso
 terraform output    # vuelve a imprimir url_tienda y comando_kubeconfig
 ```
 
-`kubectl`, en cambio, se corre **desde la raíz del repositorio**, porque
-`kubernetes-manifests/` es una ruta relativa a ella:
+`helm`, en cambio, se corre **desde la raíz del repositorio**, porque
+`charts/boutique` es una ruta relativa a ella (desde la v2.2.0 se despliega con
+el chart, no con `kubernetes-manifests/`):
 
 ```bash
 cd ../../../..
-kubectl apply -k kubernetes-manifests/
+helm upgrade --install boutique charts/boutique --atomic --timeout 8m
 ```
 
 Confundir los dos directorios fue una fuente recurrente de errores que no se
