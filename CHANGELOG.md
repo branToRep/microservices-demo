@@ -8,19 +8,19 @@ La convencion concreta de este repositorio esta en [`docs/VERSIONADO.md`](docs/V
 
 ## [Sin publicar]
 
-El objetivo del proyecto esta cumplido en la 2.0.0: configuracion versionada que
-otra persona puede levantar sin editar nada, y un ciclo de integracion y
-despliegue continuo que se demuestra en vivo. Lo que queda es producto, no
-plataforma, y se construye sobre un pipeline que ya funciona.
+La Fase III esta cerrada en la 2.12.1: Vault como unica fuente del secreto de
+Redis, configurada con Ansible, leida por el propio cluster y probada contra
+fallos (`docs/PORTAFOLIO-FASE-III.md`). Lo que queda es producto, sin numero
+de version asignado: se numera al empezarlo, segun `docs/VERSIONADO.md`.
 
 ### Pendiente
-- **v2.1.0** (#62) — recuperar `src/userservice/schema.sql`.
-- **v2.2.0** (#63) — el `userservice` completo. Es el unico ticket que es
-  programar de verdad; el detalle heredado del plan original esta como lista de
-  comprobacion en ese issue.
-- **v2.3.0** (#64) — desplegarlo en el cluster, con su Postgres.
-- **v3.0.0** (#65) — el inicio de sesion. Restaura ademas el cableado que quito
-  la 1.5.1 (ADR 0017), asi que sera el diff mas grande del proyecto.
+- (#63) El `userservice` completo. Es el unico ticket que es programar de
+  verdad; el detalle heredado del plan original esta como lista de comprobacion
+  en ese issue. El esquema de su tabla ya esta desde la 2.1.0.
+- (#64) Desplegarlo en el cluster, con su Postgres. Sus credenciales serian el
+  segundo secreto de Vault, por el mismo camino que la contrasena de Redis.
+- (#65) El inicio de sesion. Restaura ademas el cableado que quito la 1.5.1
+  (ADR 0017), asi que sera el diff mas grande del proyecto.
 
 ### Mejoras posibles, no bloqueantes
 - Construir tambien las diez imagenes de Google, para no depender de su registro.
@@ -31,6 +31,46 @@ plataforma, y se construye sobre un pipeline que ya funciona.
   del repositorio, sin tocar el workflow.
 - `apagar.sh --solo-nodos`, para bajar los nodos sin destruir el plano de
   control cuando se va a volver el mismo dia.
+- Desellar con AWS KMS (*auto-unseal*) en vez de llaves por teclado. Hoy no se
+  puede: el laboratorio no deja crear el rol de IAM que lo autorizaria.
+
+## [2.12.1] - 2026-10-22
+
+**Las pruebas de resiliencia** (Paso 11 de la lamina). Se rompio Vault a
+proposito de cuatro maneras con la tienda en marcha, y el diseno aguanto en
+todas: la tienda depende de Vault para arrancar, no para seguir viva. No cambia
+codigo.
+
+PARCHE: se documenta y se mide algo que ya estaba.
+
+### Anadido
+- `docs/PRUEBAS-DE-RESILIENCIA.md` — el procedimiento, el resultado y la
+  respuesta a cada pregunta de la lamina.
+
+### Cambiado
+- `docs/adr/0020` — "Como se va a comprobar" pasa a "Como se comprobo": las
+  once filas con su resultado y la version donde se midio.
+- `CHANGELOG.md`, puesto al dia:
+  - `[Sin publicar]` describia el estado de antes de la Fase III y numeraba
+    como pendientes versiones ya usadas (2.1.0, 2.2.0, 2.3.0). Ahora lo pendiente
+    no lleva numero hasta empezarse.
+  - La 2.1.0 tiene por fin su seccion.
+  - Los "Resultado medido" que quedaban sin rellenar en la 2.6.0, la 2.8.0 y
+    la 2.9.0.
+  - Los enlaces de comparacion del pie, que se habian quedado en la 2.2.0.
+
+### Resultado medido
+- **Vault inaccesible** con la tienda corriendo: el carrito sigue funcionando,
+  el Secret `redis-cart` sigue en el cluster y reiniciar `cartservice` funciona
+  igual.
+- **El token caduca** (Vault inaccesible mas de 10 min): el operador no puede
+  leer mientras Vault esta caida y sellada; al desellar, obtiene un token nuevo
+  solo. El pipeline no tiene token que pueda caducar.
+- **La politica pierde `read`**: `permission denied`, el valor nuevo no llega
+  al Secret y los pods no se reinician. `configurar-vault.yml` la devuelve con
+  `changed=1` y el operador reinicia los pods con el valor nuevo.
+- **Arranque en frio con Vault caida**: `levantar.sh` se detiene en el paso 7
+  ("Vault no responde... levantar-vault.sh") y la tienda no se despliega.
 
 ## [2.12.0] - 2026-10-20
 
@@ -176,10 +216,12 @@ MENOR: capacidad nueva.
 - `CHANGELOG.md` — la fecha y parte del resultado medido de la 2.8.0.
 
 ### Resultado medido
-- `configurar-vault.yml` repetido **con el usuario, sin raiz**: `changed=0`:
-  _pendiente_.
-- Token de `boutique-lectura`: lee la ruta; escribir, listar y `secrets list`,
-  `403`: _pendiente_.
+- `configurar-vault.yml` repetido **con el usuario, sin raiz**: `changed=0`.
+  Medido otra vez en la 2.11.0, ya con el raiz revocado: `changed=2` al anadir
+  el metodo `jwt` y `changed=0` al repetir.
+- Token de `boutique-lectura` (5 min): `kv get` lee la ruta y devuelve
+  `["password"]` sin el valor; `kv put`, `kv list secret/boutique` y
+  `secrets list` dan `403 permission denied`.
 - El token raiz revocado: `vault token lookup` con el, `403`: Denied
 
 ## [2.8.0] - 2026-10-10
@@ -210,12 +252,16 @@ MENOR: capacidad nueva.
 - `ansible/README.md` — el playbook nuevo y el enlace al documento.
 
 ### Resultado medido
-- `vault status` tras desellar (`Sealed false`): _pendiente de anotar_.
+- `vault status`: `Seal Type shamir`, `Total Shares 3`, `Threshold 2`,
+  `Initialized true`, version `1.21.4`. Tras dos llaves, `Sealed false`; desde la
+  2.11.0 lo comprueba `avisar-a-vault.sh` ("Vault desellada en ...").
 - `configurar-vault.yml`, primera corrida `changed=3`, segunda `changed=0`
   (2026-10-10).
-- `vault kv metadata get secret/boutique/redis-cart` (version 1): _pendiente_.
+- `vault kv metadata get secret/boutique/redis-cart`: `current_version 1`,
+  creada el 2026-10-10T21:42:48Z con `operation: create`; el valor no aparece.
+- `vault audit list` muestra `file/`; sin token, `403 permission denied`.
 - Una linea del registro de auditoria con la ruta y los valores en HMAC:
-  _pendiente_.
+  _{"hora":"2026-10-27T00:29:24.400571241Z","ruta":"secret/data/boutique/redis-cart","quien":"eks-system:serviceaccount:default:lector-vault","token":"hmac-sha256:ce9eede89e74432121fc790374227c92845410981262e62efa44e4460cbbe4f8"}_.
 
 ## [2.7.0] - 2026-10-10
 
@@ -265,8 +311,11 @@ MENOR: el pipeline gana un control que antes no tenia.
 - `ansible/README.md` — `ansible-lint` local con la misma version que el CI.
 
 ### Resultado medido
-- PR con el control en verde: _pendiente de anotar_.
-- El control en rojo ante una violacion a proposito: _pendiente de anotar_.
+- El control en verde en el PR #108 y en cada PR fusionado desde entonces
+  (#111 a #121): es obligatorio, sin el no se fusiona.
+- El control en rojo: no se provoco a proposito en el CI. `ansible-lint` si
+  detuvo una violacion real en local durante la 2.5.0 (`no-handler`), que se
+  corrigio con un handler notificado antes de abrir el PR.
 
 ## [2.5.0] - 2026-10-09
 **Vault corre.** El rol `vault` la instala, la configura y la deja respondiendo
@@ -489,6 +538,25 @@ A cambio, `--atomic` revierte la release **entera** si algo no cuaja. El
 `kubectl rollout undo` anterior revertia deployment por deployment, asi que un
 fallo a medias podia dejar el frontend nuevo hablando con un `wishlistservice`
 viejo.
+
+## [2.1.0] - 2026-09-25
+
+**El esquema de la tabla `users`, y un punto de entrada en el README.** Primer
+paso del `userservice` (#62). Esta seccion se anadio despues, en la 2.12.1: el
+PR #83 cambio el CHANGELOG para reordenar lo pendiente, pero no abrio su propia
+version.
+
+MENOR: capacidad nueva (el esquema), sin romper nada.
+
+### Anadido
+- `src/userservice/schema.sql` — el esquema de la tabla `users`, recuperado.
+- `README.md` — un bloque al principio: que anade este fork sobre la tienda de
+  Google y por donde empezar a leer.
+- `scripts/crear-issues-versionado.sh` — crea los issues de lo pendiente, uno
+  por version prevista.
+
+### Cambiado
+- `CHANGELOG.md`, `[Sin publicar]` — lo pendiente, ordenado por version.
 
 ## [2.0.0] - 2026-09-25
 
@@ -986,8 +1054,22 @@ aplicacion y no como un cambio de plataforma.
 - El nombre del bucket del estado esta escrito a fuego en `backend.tf`. En otra
   computadora hay que cambiarlo a mano; se arregla en la 1.1.0.
 
-[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v2.2.0...HEAD
+[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v2.12.1...HEAD
+[2.12.1]: https://github.com/branToRep/microservices-demo/compare/v2.12.0...v2.12.1
+[2.12.0]: https://github.com/branToRep/microservices-demo/compare/v2.11.0...v2.12.0
+[2.11.0]: https://github.com/branToRep/microservices-demo/compare/v2.10.0...v2.11.0
+[2.10.0]: https://github.com/branToRep/microservices-demo/compare/v2.9.0...v2.10.0
+[2.9.0]: https://github.com/branToRep/microservices-demo/compare/v2.8.0...v2.9.0
+[2.8.0]: https://github.com/branToRep/microservices-demo/compare/v2.7.0...v2.8.0
+[2.7.0]: https://github.com/branToRep/microservices-demo/compare/v2.6.0...v2.7.0
+[2.6.0]: https://github.com/branToRep/microservices-demo/compare/v2.5.0...v2.6.0
+[2.5.0]: https://github.com/branToRep/microservices-demo/compare/v2.4.0...v2.5.0
+[2.4.0]: https://github.com/branToRep/microservices-demo/compare/v2.3.0...v2.4.0
+[2.3.0]: https://github.com/branToRep/microservices-demo/compare/v2.2.2...v2.3.0
+[2.2.2]: https://github.com/branToRep/microservices-demo/compare/v2.2.1...v2.2.2
+[2.2.1]: https://github.com/branToRep/microservices-demo/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/branToRep/microservices-demo/compare/v2.1.0...v2.2.0
+[2.1.0]: https://github.com/branToRep/microservices-demo/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/branToRep/microservices-demo/compare/v1.7.0...v2.0.0
 [1.7.0]: https://github.com/branToRep/microservices-demo/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/branToRep/microservices-demo/compare/v1.5.1...v1.6.0
