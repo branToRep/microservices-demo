@@ -47,6 +47,7 @@ on:
     paths:
       - 'src/frontend/**'
       - 'src/wishlistservice/**'
+      - 'src/userservice/**'
       - 'protos/**'
       - 'charts/**'
       - '.github/workflows/publicar-y-desplegar.yml'
@@ -67,7 +68,7 @@ jobs:
     strategy:
       fail-fast: false        # si una imagen falla, la otra se publica igual
       matrix:
-        servicio: [frontend, wishlistservice]
+        servicio: [frontend, wishlistservice, userservice]
 
     steps:
       - uses: actions/checkout@v4
