@@ -34,6 +34,51 @@ de version asignado: se numera al empezarlo, segun `docs/VERSIONADO.md`.
 - Desellar con AWS KMS (*auto-unseal*) en vez de llaves por teclado. Hoy no se
   puede: el laboratorio no deja crear el rol de IAM que lo autorizaria.
 
+## [2.13.0] - 2026-10-29
+
+**El `userservice` existe.** Siete llamadas gRPC: alta, autenticacion, sesiones,
+perfil y cambio de contrasena. La tienda todavia no lo usa —el cableado del
+frontend es el #65— pero el servicio corre, guarda cuentas en Postgres y
+sesiones en Redis.
+
+MENOR: aparece una capacidad nueva y no cambia lo que la tienda hace hoy.
+
+### Anadido
+- `src/userservice/` — `main.go`, `accounts.go`, `sessions.go`, `migrate.go`,
+  `redis.go` (el cliente RESP del `wishlistservice`, sin libreria) y su
+  `Dockerfile`. El esquema viaja dentro del binario por `//go:embed`.
+- `docs/adr/0021` — el contador de intentos va en Postgres, no en Redis: un
+  limite que se reinicia con el pod no es un limite. Las sesiones siguen en
+  Redis, como decidio la 2.1.0.
+- `docs/adr/0022` — este servicio usa Go 1.26 y el `wishlistservice` sigue en
+  1.23. Quedarse en 1.23 obligaba a fijar `golang.org/x/crypto` en versiones de
+  2024, y este es el servicio que hashea contrasenas.
+- `GRPC_REFLEXION=1` activa la reflexion de gRPC. Cerrada por defecto: la
+  superficie del servicio de autenticacion no tiene por que ser publica.
+
+### Cambiado
+- `src/userservice/schema.sql` — la tabla `login_attempts`. Se cuenta por correo
+  **exista o no la cuenta**: contar solo los correos reales haria que el
+  servicio se comportara distinto segun existieran, y eso los delata.
+- `scripts/generar-protos.sh` — recibe el `.proto` y los destinos como
+  argumentos en vez de llevarlos fijos. Sin argumentos hace lo de siempre.
+- `.github/workflows/publicar-y-desplegar.yml` — `userservice` en la matriz, y
+  `src/userservice/**` en las rutas que disparan el workflow. Lo segundo es tan
+  necesario como lo primero: sin ello, tocar solo el servicio no construye nada.
+
+### Resultado medido
+- `CreateUser` con `Ana@Ejemplo.COM` devuelve `ana@ejemplo.com`: la
+  normalizacion ocurre en el codigo, como promete `schema.sql`.
+- El mismo correo dos veces: `AlreadyExists`, por el `UNIQUE` del esquema.
+- `expiresAt - createdAt` = 86400 s, el `SESION_TTL` por defecto.
+- Seis `Authenticate` con contrasena mala: cinco `Unauthenticated` y el sexto
+  `ResourceExhausted`, con `LOGIN_MAX_INTENTOS=5`.
+- `ValidateSession` -> `Logout` -> `ValidateSession`: el tercero responde
+  `Unauthenticated`. El cierre de sesion ocurre en el servidor; con un token
+  firmado sin estado esa tercera llamada seguiria funcionando.
+- `go build ./...` limpio y el servicio arranca contra Postgres y Redis en
+  Docker (2026-10-29).
+
 ## [2.12.2] - 2026-10-26
 
 **Un cambio solo al chart vuelve a desplegar.** *Publicar y desplegar* filtra por
@@ -1072,6 +1117,7 @@ aplicacion y no como un cambio de plataforma.
   computadora hay que cambiarlo a mano; se arregla en la 1.1.0.
 
 [Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v2.12.2...HEAD
+[2.13.0]: https://github.com/branToRep/microservices-demo/compare/v2.12.2...v2.13.0
 [2.12.2]: https://github.com/branToRep/microservices-demo/compare/v2.12.1...v2.12.2
 [2.12.1]: https://github.com/branToRep/microservices-demo/compare/v2.12.0...v2.12.1
 [2.12.0]: https://github.com/branToRep/microservices-demo/compare/v2.11.0...v2.12.0

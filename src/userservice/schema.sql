@@ -29,6 +29,32 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Intentos de login fallidos (ADR 0021). En Postgres y no en Redis a proposito:
+-- un limite que se reinicia cuando se reinicia el pod no es un limite, basta
+-- esperar un reinicio para recuperar todos los intentos.
+CREATE TABLE IF NOT EXISTS login_attempts (
+    -- Por correo, EXISTA O NO la cuenta. Si solo se contaran los intentos
+    -- contra cuentas reales, el servicio responderia distinto segun el correo
+    -- estuviera registrado o no, y eso revela que cuentas hay.
+    email           TEXT PRIMARY KEY,
+
+    failures        INTEGER NOT NULL DEFAULT 0,
+
+    -- NULL mientras no haya bloqueo. Se filtra al leer (locked_until < now()):
+    -- esto no caduca solo como una clave de Redis.
+    locked_until    TIMESTAMPTZ,
+
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Para el borrado periodico de bloqueos vencidos.
+CREATE INDEX IF NOT EXISTS login_attempts_locked_until_idx
+    ON login_attempts (locked_until)
+    WHERE locked_until IS NOT NULL;
+
 -- Las sesiones NO viven aqui: viven en Redis, que expira solo. Una sesion
 -- perdida obliga a volver a entrar; una cuenta perdida deja a alguien fuera
 -- para siempre. Por eso cada cosa esta donde le corresponde.
+--
+-- El contador de arriba es la excepcion deliberada, y por eso tiene su ADR: no
+-- es estado desechable, es un control de seguridad. Ver docs/adr/0021.
