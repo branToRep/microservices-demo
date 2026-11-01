@@ -55,6 +55,17 @@ env:
   # hoy y dentro de un mes. ansible-lint 26.x excluye ansible-core 2.17.
   VERSION_ANSIBLE_CORE: "2.18.*"
   VERSION_ANSIBLE_LINT: "26.9.0"
+  VERSION_HELM: v3.16.3
+  # 1.26 porque es lo que declara src/userservice (ADR 0022). Un toolchain mas
+  # nuevo compila modulos que piden menos, asi que sirve para los tres.
+  VERSION_GO: "1.26"
+  # Los modulos Go que mantenemos nosotros. Lista explicita a proposito: src/
+  # tiene mas servicios en Go que son de Google, y no vamos a bloquear la
+  # fusion por codigo que no escribimos ni podemos arreglar.
+  MODULOS_GO: "src/frontend src/wishlistservice src/userservice"
+  # Objetos que rinde el chart. Si cambia, o lo cambiaste a proposito y hay que
+  # actualizar este numero, o algo se colo. Medido en la v2.13.0.
+  OBJETOS_CHART: "41"
 
 jobs:
   revisar:
@@ -127,6 +138,68 @@ jobs:
       - name: ansible-playbook --syntax-check
         working-directory: ansible
         run: ansible-playbook --syntax-check site.yml configurar-vault.yml
+
+      # ---------------------------------------------------------------- chart
+      - uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.VERSION_HELM }}
+
+      - name: helm lint
+        run: helm lint charts/boutique
+
+      # Que renderice no prueba que sea correcto, pero si detecta una plantilla
+      # rota antes de que llegue a main. El conteo atrapa lo otro: que un cambio
+      # anada o quite objetos sin que nadie lo note.
+      #
+      # Se cuenta con grep y no con un analizador de YAML a proposito: asi la
+      # cuenta sale igual en el runner y en la maquina de quien programa, sin
+      # instalar nada. Para reproducirla:
+      #   helm template boutique charts/boutique | grep -c '^kind:'
+      - name: helm template y conteo de objetos
+        run: |
+          helm template boutique charts/boutique > /tmp/chart.yaml
+          HAY=$(grep -c '^kind:' /tmp/chart.yaml)
+          echo "objetos rendidos: $HAY (esperados: $OBJETOS_CHART)"
+          if [ "$HAY" != "$OBJETOS_CHART" ]; then
+            echo "::error::El chart rinde $HAY objetos y se esperaban $OBJETOS_CHART."
+            echo "::error::Si el cambio es a proposito, actualiza OBJETOS_CHART en este archivo."
+            exit 1
+          fi
+
+      # ------------------------------------------------------------------- go
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.VERSION_GO }}
+          cache: false
+
+      # gofmt no opina de estilo: senala lo que no esta en el formato canonico
+      # del lenguaje. Es la unica de las tres que no necesita descargar nada.
+      - name: gofmt
+        run: |
+          SIN_FORMATO=$(gofmt -l $MODULOS_GO)
+          if [ -n "$SIN_FORMATO" ]; then
+            echo "::error::Sin formatear. Corre: gofmt -w $SIN_FORMATO"
+            echo "$SIN_FORMATO"
+            exit 1
+          fi
+          echo "todos formateados"
+
+      - name: go build
+        run: |
+          for modulo in $MODULOS_GO; do
+            echo "==> $modulo"
+            (cd "$modulo" && go build ./...)
+          done
+
+      # vet solo en los servicios que escribimos. El frontend es de Google con
+      # cambios nuestros encima: un aviso suyo bloquearia la fusion por codigo
+      # ajeno.
+      - name: go vet
+        run: |
+          for modulo in src/wishlistservice src/userservice; do
+            echo "==> $modulo"
+            (cd "$modulo" && go vet ./...)
+          done
 
       - name: Hay credenciales para el plan?
         id: credenciales
