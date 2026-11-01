@@ -60,7 +60,15 @@ servicios:
     memoria: 64Mi
     cpuMax: 300m
     memoriaMax: 128Mi
-    usaContrasenaRedis: true   # <- con contrasenaRedis.activa, REDIS_ADDR la lleva
+    # StackExchange.Redis acepta la contrasena dentro de la propia cadena de
+    # conexion, asi que cartservice no necesito cambios de codigo (ADR 0019).
+    # Es la UNICA entrada con esta peculiaridad: los demas leen REDIS_PASSWORD
+    # como variable aparte.
+    redisAddrConContrasena: true
+    desdeSecreto:
+      - variable: REDIS_PASSWORD
+        secreto: redis-cart
+        clave: password
     env:
       REDIS_ADDR: "redis-cart:6379"
 
@@ -169,35 +177,83 @@ servicios:
       REDIS_ADDR: "redis-wishlist:6379"
       WISHLIST_TTL_SECONDS: "172800"
 
+  - nombre: userservice
+    propia: true
+    puerto: 8080
+    sondaLectura: {initialDelaySeconds: 10, periodSeconds: 5}
+    # 75 s y no 10 como los demas, y es a proposito: al arrancar espera a
+    # Postgres (DB_INTENTOS x DB_ESPERA = 30 x 2 s = hasta 60 s) ANTES de abrir
+    # el puerto. Con el valor de los demas, la sonda de vida lo mataria durante
+    # esa espera y el pod entraria en ciclo de reinicios con Postgres sano.
+    sondaVida: {initialDelaySeconds: 75, periodSeconds: 10}
+    cpu: 100m
+    memoria: 64Mi
+    cpuMax: 200m
+    memoriaMax: 128Mi
+    desdeSecreto:
+      - variable: POSTGRES_PASSWORD
+        secreto: postgres
+        clave: password
+      - variable: REDIS_PASSWORD
+        secreto: redis-sessions
+        clave: password
+    # Le anade DATABASE_URL, armada por el ayudante boutique.urlPostgres desde
+    # el bloque 'postgres' de abajo. No esta escrita aqui porque values.yaml no
+    # es una plantilla: no se puede meter un valor en medio de una cadena, y
+    # tenerla en un solo sitio es lo que impide que el servicio y el Job de
+    # migracion apunten a bases distintas.
+    usaPostgres: true
+    env:
+      PORT: "8080"
+      REDIS_ADDR: "redis-sessions:6379"
+
 # -----------------------------------------------------------------------------
 # Los dos Redis. Sin volumen persistente a proposito: el carrito y las listas
 # son datos de demostracion, y las listas caducan a las 48 h de todos modos.
 # -----------------------------------------------------------------------------
+# 'contrasena' = de que Secret saca la que exige al arrancar (--requirepass).
+# Sin ella, el Redis no pide nada: redis-wishlist sigue asi a proposito, las
+# listas de deseos no son material de autenticacion.
 redis:
   - nombre: redis-cart
-    usaContrasenaRedis: true   # <- con contrasenaRedis.activa, exige la contrasena
+    contrasena: {secreto: redis-cart, clave: password}
     memoria: 200Mi
     memoriaMax: 256Mi
   - nombre: redis-wishlist
     memoria: 100Mi
     memoriaMax: 200Mi
+  # Las sesiones del userservice. Separado de redis-cart y CON contrasena: un
+  # token de sesion es una credencial al portador, y mezclarlo con los carritos
+  # daria a cartservice acceso a las sesiones de todo el mundo.
+  - nombre: redis-sessions
+    contrasena: {secreto: redis-sessions, clave: password}
+    memoria: 100Mi
+    memoriaMax: 200Mi
 
 # -----------------------------------------------------------------------------
-# La contrasena de redis-cart (ADR 0019). El chart NO lleva el valor, ni aqui ni
-# en ninguna plantilla: solo el NOMBRE del Secret de Kubernetes donde vive. Lo
-# llena el Vault Secrets Operator leyendo secret/boutique/redis-cart (ver 'vault'
-# abajo).
+# La base del userservice.
 #
-# Encendida por defecto desde la 1.2.0 del chart. Apagarla solo tiene sentido
-# junto con vault.activa=false, para desplegar en un cluster sin Vault.
+# emptyDir, no PersistentVolumeClaim, y no es pereza: el cluster instala solo
+# vpc-cni, coredns y kube-proxy (infra/aws/modules/cluster/main.tf), sin
+# aws-ebs-csi-driver, asi que un PVC se quedaria en Pending sin un evento que
+# diga por que. Y apagar.sh destruye el cluster al terminar cada sesion, asi que
+# no hay nada que sobreviva de todos modos. Mismo criterio que los Redis.
+# Ver el ADR 0023.
 #
-# Afecta a las entradas con 'usaContrasenaRedis: true': redis-cart (la exige) y
-# cartservice (la envia). redis-wishlist sigue sin contrasena: no es de la fase.
+# El usuario y la base NO son secretos; la contrasena vive en Vault y llega por
+# el Secret 'postgres'.
 # -----------------------------------------------------------------------------
-contrasenaRedis:
+postgres:
   activa: true
-  secreto: redis-cart
-  clave: password
+  contrasena: {secreto: postgres, clave: password}
+  servicio: postgres
+  puerto: 5432
+  usuario: boutique
+  base: boutique
+  memoria: 128Mi
+  memoriaMax: 512Mi
+  cpu: 100m
+  cpuMax: 500m
 
 # -----------------------------------------------------------------------------
 # Quien llena ese Secret: el Vault Secrets Operator (ADR 0020).
@@ -221,12 +277,31 @@ vault:
   rol: boutique
   cuentaServicio: lector-vault
   audiencia: vault
-  # Donde vive el secreto: motor KV v2 en secret/, ruta boutique/redis-cart.
+  # El motor KV v2, montado en secret/.
   motorKV: secret
-  ruta: boutique/redis-cart
   # Cada cuanto vuelve a leer. Si el valor cambio, actualiza el Secret y
   # reinicia los deployments que lo usan: rotar no exige redesplegar.
   refresco: 60s
+  # Un VaultStaticSecret por entrada. Era una sola ruta hasta que hubo mas de un
+  # secreto que leer; la lista es lo que evita copiar la plantilla.
+  #
+  #   ruta     relativa al motor KV. Tiene que estar en la politica
+  #            boutique-lectura (ansible/roles/vault_config/files/politicas);
+  #            si no, el operador recibe "permission denied" y el Secret no
+  #            llega nunca.
+  #   secreto  el Secret de Kubernetes que el operador crea y del que es dueno.
+  #
+  # A quien reiniciar cuando el valor rota NO se declara aqui: la plantilla lo
+  # deduce de quien nombra ese Secret ('desdeSecreto' en servicios, 'contrasena'
+  # en redis). Una lista escrita a mano se desincronizaria del primer consumidor
+  # que alguien agregue y nadie se enteraria hasta una rotacion.
+  secretos:
+    - ruta: boutique/redis-cart
+      secreto: redis-cart
+    - ruta: boutique/redis-sessions
+      secreto: redis-sessions
+    - ruta: boutique/postgres
+      secreto: postgres
 
 # -----------------------------------------------------------------------------
 # El frontend. Aparte porque su sonda es HTTP, no gRPC, y porque necesita un

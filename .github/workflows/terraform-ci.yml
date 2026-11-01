@@ -65,7 +65,7 @@ env:
   MODULOS_GO: "src/frontend src/wishlistservice src/userservice"
   # Objetos que rinde el chart. Si cambia, o lo cambiaste a proposito y hay que
   # actualizar este numero, o algo se colo. Medido en la v2.13.0.
-  OBJETOS_CHART: "41"
+  OBJETOS_CHART: "51"
 
 jobs:
   revisar:

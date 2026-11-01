@@ -1,0 +1,196 @@
+{{/*
+---------------------------------------------------------------------------
+La base del userservice y el Job que le crea el esquema (ADR 0021 y 0023).
+
+  Deployment postgres   la base. emptyDir, no PVC: el cluster no instala
+                        aws-ebs-csi-driver, asi que un PVC se queda en Pending
+                        sin decir por que, y apagar.sh destruye el cluster al
+                        final de cada sesion de todos modos.
+  Service postgres      ClusterIP en 5432.
+  Job de migracion      corre la misma imagen con -solo-migrar: aplica
+                        schema.sql y termina.
+
+La contrasena no esta aqui ni en values.yaml: solo el nombre del Secret que
+llena el Vault Secrets Operator (plantilla vault.yaml).
+---------------------------------------------------------------------------
+*/}}
+{{- if .Values.postgres.activa }}
+{{- $ctx := dict "raiz" $ "nombre" .Values.postgres.servicio }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.postgres.servicio }}
+  labels:
+    app: {{ .Values.postgres.servicio }}
+    {{- include "boutique.etiquetas" $ctx | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ .Values.postgres.servicio }}
+  {{- /* Una sola replica, y no es una limitacion a corregir: con emptyDir cada
+         replica tendria SU propia base vacia, y el Service repartiria entre
+         ellas. Dos replicas aqui no son alta disponibilidad, son dos bases
+         distintas que se contradicen. */}}
+  replicas: 1
+  strategy:
+    {{- /* Recreate y no RollingUpdate: con RollingUpdate el pod nuevo arranca
+           antes de que muera el viejo, y los dos usarian el mismo nombre de
+           Service con bases distintas. */}}
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.postgres.servicio }}
+    spec:
+      securityContext:
+        {{- toYaml $.Values.seguridad.pod | nindent 8 }}
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          securityContext:
+            {{- toYaml $.Values.seguridad.contenedor | nindent 12 }}
+          ports:
+            - containerPort: {{ .Values.postgres.puerto }}
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgres.contrasena.secreto }}
+                  key: {{ .Values.postgres.contrasena.clave }}
+            - name: POSTGRES_USER
+              value: {{ .Values.postgres.usuario | quote }}
+            - name: POSTGRES_DB
+              value: {{ .Values.postgres.base | quote }}
+            {{- /* PGDATA en un SUBDIRECTORIO del volumen, no en su raiz, y es
+                   obligatorio aqui: initdb se niega a usar un directorio con
+                   permisos de grupo o de todos ("data directory has group or
+                   world access"), y un emptyDir con fsGroup llega en 0775. El
+                   subdirectorio lo crea initdb, con 0700. Sin esto el pod
+                   entra en ciclo de reinicios y el error no menciona el
+                   volumen. */}}
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: datos
+              mountPath: /var/lib/postgresql/data
+            {{- /* Con readOnlyRootFilesystem (viene de seguridad.contenedor y
+                   no se relaja), Postgres necesita poder escribir su socket y
+                   sus archivos temporales. */}}
+            - name: ejecucion
+              mountPath: /var/run/postgresql
+            - name: temporal
+              mountPath: /tmp
+          {{- /* pg_isready y no una sonda TCP: el puerto acepta conexiones
+                 antes de que la base este lista para consultas, y durante el
+                 initdb de la primera vez eso duraria varios segundos en los
+                 que el Job de migracion fallaria. */}}
+          readinessProbe:
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            exec:
+              command: ["pg_isready", "-U", {{ .Values.postgres.usuario | quote }}, "-d", {{ .Values.postgres.base | quote }}]
+          livenessProbe:
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            exec:
+              command: ["pg_isready", "-U", {{ .Values.postgres.usuario | quote }}, "-d", {{ .Values.postgres.base | quote }}]
+          resources:
+            requests:
+              cpu: {{ .Values.postgres.cpu }}
+              memory: {{ .Values.postgres.memoria }}
+            limits:
+              cpu: {{ .Values.postgres.cpuMax }}
+              memory: {{ .Values.postgres.memoriaMax }}
+      volumes:
+        - name: datos
+          emptyDir: {}
+        - name: ejecucion
+          emptyDir: {}
+        - name: temporal
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.postgres.servicio }}
+  labels:
+    app: {{ .Values.postgres.servicio }}
+    {{- include "boutique.etiquetas" $ctx | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ .Values.postgres.servicio }}
+  ports:
+    - name: tcp-postgres
+      port: {{ .Values.postgres.puerto }}
+      targetPort: {{ .Values.postgres.puerto }}
+---
+{{/*
+El Job que aplica el esquema. Las tres anotaciones son la parte que importa:
+
+  hook: post-install,post-upgrade
+      POST y no PRE. Un pre-install correria antes de que exista el Deployment
+      de Postgres, asi que esperaria a una base que nadie ha creado todavia y
+      agotaria su plazo. Un post-install corre DESPUES de que Helm haya
+      esperado a que los pods esten listos, con Postgres ya respondiendo.
+
+  hook-delete-policy: before-hook-creation
+      Un Job con nombre fijo no se puede reaplicar: spec.template es inmutable,
+      y el segundo levantar.sh fallaria con "field is immutable" y --atomic
+      revertiria la release entera. Esta politica borra el Job anterior antes
+      de crear el nuevo.
+
+Y como es un hook, si falla, --atomic revierte el despliegue: un esquema que no
+se pudo aplicar TIENE que tumbar el despliegue, no quedarse callado.
+
+No va en rolloutRestartTargets de ningun VaultStaticSecret: el CRD solo acepta
+Deployment, DaemonSet, StatefulSet y argo.Rollout, y un Job ahi lo rechaza el
+servidor de la API.
+*/}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Values.postgres.servicio }}-migracion
+  labels:
+    {{- include "boutique.etiquetas" (dict "raiz" $ "nombre" (printf "%s-migracion" .Values.postgres.servicio)) | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  # El contenedor ya reintenta por dentro (DB_INTENTOS x DB_ESPERA), asi que
+  # estos tres intentos son para fallos del pod, no para esperar a la base.
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.postgres.servicio }}-migracion
+    spec:
+      restartPolicy: Never
+      securityContext:
+        {{- toYaml $.Values.seguridad.pod | nindent 8 }}
+      containers:
+        - name: migracion
+          image: {{ include "boutique.imagen" (dict "raiz" $ "servicio" (dict "nombre" "userservice" "propia" true)) }}
+          imagePullPolicy: Always
+          args: ["-solo-migrar"]
+          securityContext:
+            {{- toYaml $.Values.seguridad.contenedor | nindent 12 }}
+          env:
+            # POSTGRES_PASSWORD primero: boutique.urlPostgres la referencia como
+            # $(POSTGRES_PASSWORD) y Kubernetes solo sustituye lo que ya declaro.
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgres.contrasena.secreto }}
+                  key: {{ .Values.postgres.contrasena.clave }}
+            - name: DATABASE_URL
+              value: {{ include "boutique.urlPostgres" $ | quote }}
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+{{- end }}

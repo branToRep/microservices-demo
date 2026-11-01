@@ -17,9 +17,24 @@ vault_config_token: >-
 # directorio con el dueno y la rotacion correctos.
 vault_config_archivo_auditoria: /var/log/vault/audit.log
 
-# Donde vive la contrasena de Redis (ADR 0019): motor KV v2 montado en secret/.
+# El motor KV v2, montado en secret/ (ADR 0019).
 vault_config_ruta_kv: secret
-vault_config_ruta_redis: boutique/redis-cart
+
+# Los secretos que este playbook GENERA: una contrasena aleatoria de 32
+# caracteres por ruta, escrita solo si la ruta todavia no existe.
+#
+# Cada ruta tiene que estar tambien en:
+#   - files/politicas/boutique-lectura.hcl  (para que el cluster pueda leerla)
+#   - charts/boutique/values.yaml, vault.secretos  (para que llegue a un Secret)
+#
+# Solo letras y numeros, y es por una razon concreta: las dos viajan dentro de
+# una cadena de conexion -"redis-cart:6379,password=..." y
+# "postgres://usuario:clave@host/base"- donde una coma, un igual, una barra o
+# una arroba la partirian. 32 alfanumericos son unos 190 bits: de sobra.
+vault_config_secretos:
+  - boutique/redis-cart
+  - boutique/redis-sessions
+  - boutique/postgres
 
 # ------------------------------ politicas ------------------------------------
 # Se leen de files/politicas/<nombre>.hcl. Si el texto en Vault difiere del

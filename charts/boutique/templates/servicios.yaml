@@ -9,6 +9,14 @@ diez. Aqui se edita una vez.
 ---------------------------------------------------------------------------
 */}}
 {{- range $s := .Values.servicios }}
+{{- /* Un servicio que necesita la base no se despliega sin ella: arrancaria con
+       el DATABASE_URL por defecto de su codigo (localhost) y entraria en ciclo
+       de reinicios. Esto es lo que mantiene coherente el modo "cluster sin
+       Vault" (vault.activa=false, postgres.activa=false), que es como se
+       desplegaba antes de la 2.10.0. */}}
+{{- if and $s.usaPostgres (not $.Values.postgres.activa) }}
+{{- continue }}
+{{- end }}
 {{- $ctx := dict "raiz" $ "servicio" $s "nombre" $s.nombre }}
 ---
 apiVersion: apps/v1
@@ -41,29 +49,42 @@ spec:
             {{- toYaml $.Values.seguridad.contenedor | nindent 12 }}
           ports:
             - containerPort: {{ $s.puerto }}
-          {{- /* La contrasena de Redis (values.yaml, contrasenaRedis). Va PRIMERO,
-               y no es estetica: Kubernetes solo sustituye $(REDIS_PASSWORD) si
-               esa variable aparece ANTES en la lista. Las de 'env' salen de un
-               mapa, que Helm recorre en orden alfabetico, y REDIS_ADDR va
-               antes que REDIS_PASSWORD: dentro del mapa, la referencia llegaria
-               literal a cartservice y Redis la rechazaria.
+          {{- /* Las variables que salen de un Secret van PRIMERO, y no es
+               estetica: Kubernetes solo sustituye $(VARIABLE) si esa variable
+               aparece ANTES en la lista. Las de 'env' salen de un mapa, que
+               Helm recorre en orden alfabetico, asi que su posicion no se
+               puede elegir ni predecir.
 
-               Apagada, esta plantilla produce exactamente lo mismo que antes. */}}
-          {{- $conContrasena := and $.Values.contrasenaRedis.activa $s.usaContrasenaRedis }}
-          {{- if or $s.env $conContrasena }}
+               Sin Vault no existen esos Secret, asi que no se referencian: con
+               vault.activa=false esta plantilla produce lo mismo que antes de
+               que hubiera secretos. */}}
+          {{- $desdeSecreto := list }}
+          {{- $addrConContrasena := false }}
+          {{- if $.Values.vault.activa }}
+          {{- $desdeSecreto = $s.desdeSecreto | default (list) }}
+          {{- $addrConContrasena = $s.redisAddrConContrasena | default false }}
+          {{- end }}
+          {{- $conPostgres := and $s.usaPostgres $.Values.postgres.activa }}
+          {{- if or $s.env $desdeSecreto $conPostgres }}
           env:
-            {{- if $conContrasena }}
-            - name: REDIS_PASSWORD
+            {{- range $ref := $desdeSecreto }}
+            - name: {{ $ref.variable }}
               valueFrom:
                 secretKeyRef:
-                  name: {{ $.Values.contrasenaRedis.secreto }}
-                  key: {{ $.Values.contrasenaRedis.clave }}
+                  name: {{ $ref.secreto }}
+                  key: {{ $ref.clave }}
+            {{- end }}
+            {{- if $conPostgres }}
+            - name: DATABASE_URL
+              value: {{ include "boutique.urlPostgres" $ | quote }}
             {{- end }}
             {{- range $k, $v := $s.env }}
             - name: {{ $k }}
-              {{- if and $conContrasena (eq $k "REDIS_ADDR") }}
-              {{- /* StackExchange.Redis acepta la cadena completa en REDIS_ADDR:
-                     cartservice no necesita cambios de codigo (ADR 0019). */}}
+              {{- if and $addrConContrasena (eq $k "REDIS_ADDR") }}
+              {{- /* La peculiaridad de cartservice: StackExchange.Redis acepta
+                     la contrasena dentro de la cadena de conexion, asi que no
+                     necesito cambios de codigo (ADR 0019). El userservice no
+                     entra aqui: su cliente lee REDIS_PASSWORD aparte. */}}
               value: {{ printf "%s,password=$(REDIS_PASSWORD)" $v | quote }}
               {{- else }}
               value: {{ $v | quote }}
