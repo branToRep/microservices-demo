@@ -14,9 +14,6 @@ fallos (`docs/PORTAFOLIO-FASE-III.md`). Lo que queda es producto, sin numero
 de version asignado: se numera al empezarlo, segun `docs/VERSIONADO.md`.
 
 ### Pendiente
-- (#63) El `userservice` completo. Es el unico ticket que es programar de
-  verdad; el detalle heredado del plan original esta como lista de comprobacion
-  en ese issue. El esquema de su tabla ya esta desde la 2.1.0.
 - (#64) Desplegarlo en el cluster, con su Postgres. Sus credenciales serian el
   segundo secreto de Vault, por el mismo camino que la contrasena de Redis.
 - (#65) El inicio de sesion. Restaura ademas el cableado que quito la 1.5.1
@@ -33,6 +30,67 @@ de version asignado: se numera al empezarlo, segun `docs/VERSIONADO.md`.
   control cuando se va a volver el mismo dia.
 - Desellar con AWS KMS (*auto-unseal*) en vez de llaves por teclado. Hoy no se
   puede: el laboratorio no deja crear el rol de IAM que lo autorizaria.
+
+## [2.13.1] - 2026-10-31
+
+**El control obligatorio revisa el chart y el codigo Go.** Hasta ahora miraba
+Terraform y Ansible. El chart llevaba sin revisarse desde la 2.2.0, y la 2.13.0
+metio unas 2900 lineas de Go sin que ningun control automatico las viera.
+
+PARCHE: no anade capacidad, revisa y corrige lo que ya estaba.
+
+### Anadido
+- `.github/workflows/terraform-ci.yml`, dentro del trabajo *Formato y sintaxis*:
+  - `helm lint` y `helm template` sobre `charts/boutique`, con un conteo de los
+    objetos rendidos.
+  - `gofmt -l`, `go build ./...` y `go vet ./...` sobre los modulos Go propios.
+- Cabecera de licencia en los cuatro `.go` nuevos del `userservice`, que salieron
+  sin ella en la 2.13.0.
+
+Van **dentro** del trabajo obligatorio y no en uno aparte a proposito: la
+proteccion de `main` exige un solo check, y un trabajo nuevo se pondria rojo sin
+bloquear nada mientras un administrador no lo anada a la lista.
+
+El conteo del chart se hace con `grep -c '^kind:'` y no con un analizador de
+YAML para no depender de `pyyaml`: asi la cuenta sale igual en el runner y en la
+maquina de quien programa, que puede reproducirla antes de subir nada.
+
+`go vet` corre solo en `wishlistservice` y `userservice`. El frontend es codigo
+de Google con cambios nuestros encima, y un aviso suyo bloquearia la fusion por
+algo que no escribimos.
+
+### Corregido
+- **Tres archivos de `src/frontend` no estaban en el formato canonico de Go**:
+  `handlers.go`, `main.go` y `middleware.go`. Nadie los habia revisado nunca
+  porque no habia nada que revisara Go.
+- `CHANGELOG.md` — el `[Sin publicar]` seguia listando el #63, que salio en la
+  2.13.0; y el `Resultado medido` de la 2.12.2 estaba sin rellenar.
+
+### Resultado medido
+- `gofmt -l` en los tres modulos: **tres archivos**, todos de `src/frontend`.
+  Reformateados en este mismo PR; el diff queda en 28 lineas anadidas y 28
+  quitadas, o sea ningun cambio de contenido.
+- `helm lint charts/boutique`: 1 chart, 0 fallos.
+- `helm template ... | grep -c '^kind:'`: **41 objetos**, que es el numero que
+  fija `OBJETOS_CHART`.
+- `go build ./...` en `src/frontend`, `src/wishlistservice` y `src/userservice`:
+  los tres compilan.
+- `go vet ./...` en `src/wishlistservice` y `src/userservice`: sin avisos.
+- Todo lo anterior medido en local **antes** de subirlo (2026-10-31), que es
+  justo lo que el conteo sin `pyyaml` hace posible.
+
+### Lo que esto ensena
+
+Van cinco mecanismos y cinco defectos reales, cada uno encontrado en su primer
+uso:
+
+| Mecanismo | Que encontro |
+|---|---|
+| CI de Terraform (1.4.0) | cinco `.tf` mal formateados desde la 1.0.0 |
+| Proteccion de `main` (1.4.1) | un check requerido que bloqueaba los PR que no lo disparaban |
+| Prueba en clon limpio (1.5.0) | un fallo de lectura y un mensaje de error que mentia |
+| Compilar de verdad (1.5.1) | el frontend roto desde el PR #35 |
+| CI de Go (2.13.1) | tres archivos del frontend sin formatear |
 
 ## [2.13.0] - 2026-10-29
 
@@ -94,8 +152,10 @@ PARCHE: se corrige algo que ya estaba.
   apuntaban todavia a `kubernetes-manifests/`.
 
 ### Resultado medido
-- El merge de este PR dispara *Publicar y desplegar* (toca el propio workflow):
-  _pendiente (enlace a la corrida y su resultado)_.
+- El merge de este PR dispara *Publicar y desplegar*: corrida `40991288515`,
+  `success`. Construyo las tres imagenes (frontend, wishlistservice y
+  userservice) y el despliegue se detuvo solo en la comprobacion de
+  credenciales, con el laboratorio cerrado.
 ## [2.12.1] - 2026-10-22
 
 **Las pruebas de resiliencia** (Paso 11 de la lamina). Se rompio Vault a
@@ -1117,6 +1177,7 @@ aplicacion y no como un cambio de plataforma.
   computadora hay que cambiarlo a mano; se arregla en la 1.1.0.
 
 [Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v2.12.2...HEAD
+[2.13.1]: https://github.com/branToRep/microservices-demo/compare/v2.13.0...v2.13.1
 [2.13.0]: https://github.com/branToRep/microservices-demo/compare/v2.12.2...v2.13.0
 [2.12.2]: https://github.com/branToRep/microservices-demo/compare/v2.12.1...v2.12.2
 [2.12.1]: https://github.com/branToRep/microservices-demo/compare/v2.12.0...v2.12.1
