@@ -95,28 +95,29 @@
   when: (vault_config_ruta_kv ~ '/') not in (vault_config_montajes.json.data | default(vault_config_montajes.json))
   changed_when: true
 
-# ---------------------------- la contrasena de Redis -------------------------
-# Se genera aqui y se escribe directamente en Vault: no pasa por ningun archivo,
-# ni se imprime. Si ya existe, NO se toca: rotarla es una decision, no un efecto
-# de volver a correr el playbook.
+# -------------------------- las contrasenas generadas ------------------------
+# Se generan aqui y se escriben directamente en Vault: no pasan por ningun
+# archivo, ni se imprimen. Si la ruta ya existe, NO se toca: rotar una
+# contrasena es una decision, no un efecto de volver a correr el playbook.
 #
-# Solo letras y numeros: cartservice la recibe dentro de una cadena de conexion
-# ("redis-cart:6379,password=..."), donde una coma o un igual la partirian.
-# 32 caracteres alfanumericos son unos 190 bits: de sobra.
-- name: Comprobar si la contrasena de Redis ya existe
+# La lista esta en defaults (vault_config_secretos), con el porque del juego de
+# caracteres. Agregar un secreto generado es agregar una linea alli, aqui nada.
+- name: Comprobar que contrasenas generadas ya existen
   ansible.builtin.uri:
-    url: "{{ vault_config_addr }}/v1/{{ vault_config_ruta_kv }}/data/{{ vault_config_ruta_redis }}"
+    url: "{{ vault_config_addr }}/v1/{{ vault_config_ruta_kv }}/data/{{ item }}"
     ca_path: "{{ vault_config_cacert }}"
     headers:
       X-Vault-Token: "{{ vault_config_token }}"
     status_code: [200, 404]
-  register: vault_config_redis
+  loop: "{{ vault_config_secretos }}"
+  register: vault_config_generados
   check_mode: false
   no_log: true   # la respuesta trae la contrasena si existe
 
-- name: Crear la contrasena de Redis
+# item.item es la ruta; item.status, lo que contesto la comprobacion de arriba.
+- name: Crear las contrasenas que falten
   ansible.builtin.uri:
-    url: "{{ vault_config_addr }}/v1/{{ vault_config_ruta_kv }}/data/{{ vault_config_ruta_redis }}"
+    url: "{{ vault_config_addr }}/v1/{{ vault_config_ruta_kv }}/data/{{ item.item }}"
     method: POST
     ca_path: "{{ vault_config_cacert }}"
     headers:
@@ -126,7 +127,8 @@
       data:
         password: "{{ lookup('ansible.builtin.password', '/dev/null', length=32, chars=['ascii_letters', 'digits']) }}"
     status_code: [200, 204]
-  when: vault_config_redis.status == 404
+  loop: "{{ vault_config_generados.results }}"
+  when: item.status == 404
   changed_when: true
   no_log: true   # el cuerpo lleva la contrasena
 
@@ -145,9 +147,11 @@
   ansible.builtin.debug:
     msg: >-
       Auditoria en {{ vault_config_archivo_auditoria }}, KV v2 en
-      {{ vault_config_ruta_kv }}/, y la contrasena de Redis en
-      {{ vault_config_ruta_kv }}/{{ vault_config_ruta_redis }}
-      ({{ 'ya existia, sin cambios' if vault_config_redis.status == 200 else 'creada ahora' }}).
+      {{ vault_config_ruta_kv }}/.
+      Contrasenas generadas: {{ vault_config_secretos | join(', ') }}
+      (nuevas en esta corrida:
+      {{ vault_config_generados.results | selectattr('status', 'equalto', 404)
+         | map(attribute='item') | list | join(', ') | default('ninguna', true) }}).
       Politicas: {{ vault_config_politicas | join(', ') }}.
       Metodo jwt en auth/{{ vault_config_jwt_ruta }}/ con el rol {{ vault_config_jwt_rol }}
       (el emisor del cluster lo escribe scripts/aws/avisar-a-vault.sh).

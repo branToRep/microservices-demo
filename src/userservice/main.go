@@ -55,6 +55,7 @@ type configuracion struct {
 	puerto          string
 	urlPostgres     string
 	direccionRedis  string
+	contrasenaRedis string
 	intentosBase    int
 	esperaBase      time.Duration
 	duracionSesion  time.Duration
@@ -68,9 +69,13 @@ type configuracion struct {
 // para correr en local contra los contenedores de desarrollo.
 func leerConfiguracion() configuracion {
 	return configuracion{
-		puerto:          env("PORT", "8080"),
-		urlPostgres:     env("DATABASE_URL", "postgres://postgres:local@localhost:5432/postgres"),
-		direccionRedis:  env("REDIS_ADDR", "localhost:6379"),
+		puerto:         env("PORT", "8080"),
+		urlPostgres:    env("DATABASE_URL", "postgres://postgres:local@localhost:5432/postgres"),
+		direccionRedis: env("REDIS_ADDR", "localhost:6379"),
+		// Vacia por defecto: en local los contenedores de desarrollo no la
+		// piden. En el cluster la pone el chart desde el Secret que llena
+		// Vault, y el Redis de sesiones la exige.
+		contrasenaRedis: os.Getenv("REDIS_PASSWORD"),
 		intentosBase:    envEntero("DB_INTENTOS", 30),
 		esperaBase:      envDuracion("DB_ESPERA", 2*time.Second),
 		duracionSesion:  envDuracion("SESION_TTL", 24*time.Hour),
@@ -178,7 +183,7 @@ func main() {
 	srv := &servidor{
 		cfg:   cfg,
 		pool:  pool,
-		redis: newRedisClient(cfg.direccionRedis),
+		redis: newRedisClient(cfg.direccionRedis, cfg.contrasenaRedis),
 	}
 
 	lis, err := net.Listen("tcp", ":"+cfg.puerto)

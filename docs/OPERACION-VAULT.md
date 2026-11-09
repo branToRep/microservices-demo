@@ -69,9 +69,40 @@ Activa, en este orden:
 1. **El registro de auditoría** en `/var/log/vault/audit.log`. Primero, para que
    todo lo que sigue ya quede registrado.
 2. **El motor KV v2** en `secret/`. Guarda versiones de cada secreto.
-3. **La contraseña de Redis** en `secret/boutique/redis-cart`, clave `password`:
-   32 caracteres alfanuméricos, generados por Ansible y escritos directamente en
-   Vault. No se imprimen ni pasan por ningún archivo. Si ya existe, no se toca.
+3. **Las contraseñas generadas**, cada una con la clave `password`: 32
+   caracteres alfanuméricos, generados por Ansible y escritos directamente en
+   Vault. No se imprimen ni pasan por ningún archivo. Si la ruta ya existe, no
+   se toca: rotar es una decisión, no un efecto de repetir el playbook.
+
+   | Ruta | Para |
+   |---|---|
+   | `secret/boutique/redis-cart` | la contraseña de `redis-cart` |
+   | `secret/boutique/redis-sessions` | la del Redis de sesiones |
+   | `secret/boutique/postgres` | la de la base del `userservice` |
+
+   La lista está en `ansible/roles/vault_config/defaults/main.yml`
+   (`vault_config_secretos`). Agregar un secreto generado es agregar una línea
+   ahí, **y la ruta correspondiente** en la política `boutique-lectura` y en
+   `charts/boutique/values.yaml` (`vault.secretos`): sin la política el operador
+   recibe *permission denied*, y sin la entrada del chart el valor no llega a
+   ningún Secret de Kubernetes.
+
+   > **Después de añadir un secreto, este playbook hay que volver a correrlo
+   > ANTES de desplegar el chart.** `levantar-vault.sh` corre `site.yml`, que
+   > configura la *máquina*; esto es otro playbook y nadie lo lanza solo. Si se
+   > despliega sin él, la ruta no existe y la política no la concede, los pods
+   > que esperan ese Secret se quedan en `CreateContainerConfigError`, y
+   > `helm upgrade --atomic` espera hasta su tiempo límite y revierte la
+   > release entera. Ocho minutos y un síntoma que no menciona a Vault.
+   >
+   > Comprobarlo cuesta nada, y sale a cuenta hacerlo antes de `levantar.sh`:
+   >
+   > ```bash
+   > vault policy read boutique-lectura     # tienen que estar las tres rutas
+   > for r in redis-cart redis-sessions postgres; do
+   >   vault kv metadata get "secret/boutique/$r" >/dev/null && echo "ok  $r"
+   > done
+   > ```
 
 **No** usar `vault login` con el token raíz: lo guarda en `~/.vault-token`.
 
@@ -83,6 +114,8 @@ Con el token todavía cargado (si se abrió otra terminal, repetir el `read -rs`
 vault audit list                                  # file/
 vault secrets list                                # secret/  kv  ... version:2
 vault kv metadata get secret/boutique/redis-cart  # versión 1, fechas; NO el valor
+vault kv metadata get secret/boutique/redis-sessions
+vault kv metadata get secret/boutique/postgres    # igual, la de la base
 unset VAULT_TOKEN
 vault audit list                                  # ahora: 403 permission denied
 ```

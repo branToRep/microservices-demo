@@ -43,6 +43,10 @@ var errRedisConn = errors.New("redis: connection failure")
 
 type redisClient struct {
 	addr string
+	// Vacia = Redis sin contrasena, y entonces no se manda AUTH. No es
+	// opcional por comodidad: redis-wishlist no lleva contrasena y el mismo
+	// cliente tiene que servir para los dos casos.
+	contrasena string
 
 	mu   sync.Mutex
 	idle []*redisConn
@@ -53,16 +57,44 @@ type redisConn struct {
 	br *bufio.Reader
 }
 
-func newRedisClient(addr string) *redisClient {
-	return &redisClient{addr: addr}
+func newRedisClient(addr, contrasena string) *redisClient {
+	return &redisClient{addr: addr, contrasena: contrasena}
 }
 
+// dial abre una conexion y, si hay contrasena, la autentica ANTES de devolverla
+// al pool.
+//
+// AUTH es por conexion, no por orden: Redis la recuerda mientras el socket
+// viva. Por eso va aqui y no en do(), y por eso una conexion reutilizada del
+// pool ya esta autenticada y no paga el viaje otra vez.
 func (r *redisClient) dial() (*redisConn, error) {
 	c, err := net.DialTimeout("tcp", r.addr, redisDialTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", errRedisConn, err)
 	}
-	return &redisConn{c: c, br: bufio.NewReader(c)}, nil
+	conn := &redisConn{c: c, br: bufio.NewReader(c)}
+	if r.contrasena == "" {
+		return conn, nil
+	}
+	// Con su propio plazo: un Redis que acepta la conexion TCP y luego no
+	// contesta al AUTH dejaria el arranque colgado para siempre.
+	if err := c.SetDeadline(time.Now().Add(redisRWTimeout)); err != nil {
+		c.Close()
+		return nil, fmt.Errorf("%w: %v", errRedisConn, err)
+	}
+	if _, err := c.Write(encodeCommand([]string{"AUTH", r.contrasena})); err != nil {
+		c.Close()
+		return nil, fmt.Errorf("%w: %v", errRedisConn, err)
+	}
+	// Un fallo aqui es "-WRONGPASS" o "-ERR Client sent AUTH, but no password
+	// is set": no es de transporte, y reintentarlo en otra conexion daria lo
+	// mismo. Se devuelve SIN envolver en errRedisConn, a proposito, para que
+	// do() no lo reintente; y el mensaje no lleva la contrasena.
+	if _, err := readReply(conn.br); err != nil {
+		c.Close()
+		return nil, fmt.Errorf("redis: AUTH rechazado: %w", err)
+	}
+	return conn, nil
 }
 
 func (r *redisClient) get() (*redisConn, error) {

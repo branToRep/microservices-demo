@@ -8,14 +8,54 @@ Operator, que instala levantar.sh como release aparte.
                                  lo valida con las llaves publicas del emisor
                                  OIDC de EKS y le da boutique-lectura, 10 min.
   VaultAuth                      metodo jwt en auth/eks/, rol boutique.
-  VaultStaticSecret              lee secret/boutique/redis-cart y lo escribe en
-                                 el Secret redis-cart. Si cambia, reinicia
-                                 redis-cart y cartservice.
+  VaultStaticSecret              uno por entrada de vault.secretos: lee su ruta
+                                 del motor KV y la escribe en un Secret de
+                                 Kubernetes. Si el valor cambia, reinicia a
+                                 quien lo lee al arrancar.
 
 La direccion de la Vault y su CA no estan aqui: son la VaultConnection de cada
 operador (scripts/aws/conectar-operador-vault.sh).
 ---------------------------------------------------------------------------
 */}}
+{{- /* Guarda 1. Un consumidor nombra un Secret que ninguna entrada de
+       vault.secretos crea. Antes, con un solo secreto, el nombre salia de un
+       unico sitio y no podia no coincidir; con la lista son varios. El sintoma
+       en el cluster seria CreateContainerConfigError, lejos de la causa, asi
+       que se caza al rendir: aqui todavia se puede explicar. */}}
+{{- $producidos := list }}
+{{- range $sec := .Values.vault.secretos }}
+{{- $producidos = append $producidos $sec.secreto }}
+{{- end }}
+{{- $referenciados := list }}
+{{- range $r := .Values.redis }}
+{{- if $r.contrasena }}
+{{- $referenciados = append $referenciados $r.contrasena.secreto }}
+{{- end }}
+{{- end }}
+{{- range $s := .Values.servicios }}
+{{- if not (include "boutique.servicioOmitido" (dict "raiz" $ "servicio" $s)) }}
+{{- range $ref := ($s.desdeSecreto | default (list)) }}
+{{- $referenciados = append $referenciados $ref.secreto }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if and .Values.postgres.activa .Values.postgres.contrasena }}
+{{- $referenciados = append $referenciados .Values.postgres.contrasena.secreto }}
+{{- end }}
+{{- if .Values.vault.activa }}
+{{- range $n := ($referenciados | uniq) }}
+{{- if not (has $n $producidos) }}
+{{- fail (printf "Algo pide el Secret '%s' y ninguna entrada de vault.secretos lo crea (crean: %v). Agregalo a vault.secretos, y su ruta a la politica boutique-lectura." $n $producidos) }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- /* Guarda 2. Postgres encendido sin Vault. La contrasena de la base sale de
+       Vault, asi que sin ella el userservice arrancaria con la cadena de
+       conexion literal "$(POSTGRES_PASSWORD)" y fallaria al autenticarse, con
+       un error que no menciona a Vault en ningun momento. */}}
+{{- if and .Values.postgres.activa (not .Values.vault.activa) }}
+{{- fail "postgres.activa=true con vault.activa=false: la contrasena de la base sale de Vault. Apaga tambien postgres.activa para desplegar en un cluster sin Vault." }}
+{{- end }}
 {{- if .Values.vault.activa }}
 {{- $ctx := dict "raiz" $ "nombre" .Values.vault.cuentaServicio }}
 ---
@@ -41,38 +81,77 @@ spec:
     serviceAccount: {{ .Values.vault.cuentaServicio }}
     audiences:
       - {{ .Values.vault.audiencia }}
+{{- range $sec := .Values.vault.secretos }}
 ---
 apiVersion: secrets.hashicorp.com/v1beta1
 kind: VaultStaticSecret
 metadata:
-  name: {{ .Values.contrasenaRedis.secreto }}
+  name: {{ $sec.secreto }}
   labels:
-    {{- include "boutique.etiquetas" $ctx | nindent 4 }}
+    {{- include "boutique.etiquetas" (dict "raiz" $ "nombre" $sec.secreto) | nindent 4 }}
 spec:
-  vaultAuthRef: {{ .Values.vault.cuentaServicio }}
+  vaultAuthRef: {{ $.Values.vault.cuentaServicio }}
   type: kv-v2
-  mount: {{ .Values.vault.motorKV }}
-  path: {{ .Values.vault.ruta }}
-  refreshAfter: {{ .Values.vault.refresco }}
+  mount: {{ $.Values.vault.motorKV }}
+  path: {{ $sec.ruta }}
+  refreshAfter: {{ $.Values.vault.refresco }}
   destination:
-    name: {{ .Values.contrasenaRedis.secreto }}
     # El operador CREA el Secret y es su dueno: si se borra el
     # VaultStaticSecret (helm uninstall), el Secret se va con el.
+    name: {{ $sec.secreto }}
     create: true
-  {{- /* Los dos que leen la contrasena al arrancar (v2.10.0): con el valor
-         nuevo en el Secret y no reiniciados, cartservice seguiria con la vieja
-         y Redis la rechazaria. */}}
+  {{- /* A quien reiniciar cuando el valor rota: quien lo lee al arrancar y no
+         lo vuelve a mirar. Se DEDUCE de quien nombra este Secret, nunca de una
+         lista escrita a mano, y la razon es de seguridad, no de comodidad.
+
+         --requirepass y POSTGRES_PASSWORD se leen al arrancar. Si al SERVIDOR
+         le falta su reinicio, rotar el valor en Vault actualiza el Secret de
+         Kubernetes y no cambia nada mas: el servidor sigue aceptando la
+         contrasena vieja, sin un solo error en ningun sitio. La rotacion
+         parece hecha y no revoco nada, que en un incidente es creer que
+         cerraste la puerta. Si le falta a un CLIENTE, el fallo es ruidoso y
+         solo de disponibilidad: se cae hasta que alguien lo reinicie.
+
+         Una lista a mano se desincroniza del primer consumidor que alguien
+         agregue, y el caso que se rompe en silencio es justo el grave.
+
+         'kind' solo acepta Deployment, DaemonSet, StatefulSet y argo.Rollout:
+         el CRD lo valida con un enum, asi que un Job aqui lo rechaza el
+         servidor de la API y, con --atomic, se revierte la release entera. El
+         Job de migracion no va aqui, y no le hace falta: corre una vez y
+         termina con el valor que tenia el Secret en ese momento. */}}
+  {{- $reinicios := list }}
+  {{- range $r := $.Values.redis }}
+  {{- if and $r.contrasena (eq $r.contrasena.secreto $sec.secreto) }}
+  {{- $reinicios = append $reinicios $r.nombre }}
+  {{- end }}
+  {{- end }}
+  {{- range $s := $.Values.servicios }}
+  {{- range $ref := ($s.desdeSecreto | default (list)) }}
+  {{- if eq $ref.secreto $sec.secreto }}
+  {{- $reinicios = append $reinicios $s.nombre }}
+  {{- end }}
+  {{- end }}
+  {{- end }}
+  {{- /* Postgres tambien, y conviene saber lo que implica: POSTGRES_PASSWORD
+         solo se usa en el initdb, asi que reiniciarlo con una contrasena nueva
+         vuelve a inicializar la base y, con emptyDir, la deja VACIA. Suena
+         mal, pero la alternativa es peor: sin reiniciarlo, el userservice se
+         reinicia con la contrasena nueva contra un Postgres que conserva la
+         vieja, y eso es una caida total hasta que alguien redespliegue a mano.
+         Con el cluster destruyendose cada sesion, rotar esta contrasena no es
+         un escenario real; si algun dia lo es, hara falta un PVC y cambiar la
+         contrasena dentro de Postgres, no solo en Vault. */}}
+  {{- if and $.Values.postgres.activa $.Values.postgres.contrasena (eq $.Values.postgres.contrasena.secreto $sec.secreto) }}
+  {{- $reinicios = append $reinicios $.Values.postgres.servicio }}
+  {{- end }}
+  {{- $reinicios = $reinicios | uniq }}
+  {{- if $reinicios }}
   rolloutRestartTargets:
-    {{- range $s := .Values.redis }}
-    {{- if $s.usaContrasenaRedis }}
+    {{- range $nombre := $reinicios }}
     - kind: Deployment
-      name: {{ $s.nombre }}
+      name: {{ $nombre }}
     {{- end }}
-    {{- end }}
-    {{- range $s := .Values.servicios }}
-    {{- if $s.usaContrasenaRedis }}
-    - kind: Deployment
-      name: {{ $s.nombre }}
-    {{- end }}
-    {{- end }}
+  {{- end }}
+{{- end }}
 {{- end }}
