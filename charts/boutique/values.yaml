@@ -246,6 +246,20 @@ redis:
 postgres:
   activa: true
   contrasena: {secreto: postgres, clave: password}
+  # El usuario Unix con el que corre el contenedor, y HAY que fijarlo:
+  #
+  #   - La imagen oficial no trae instruccion USER: arranca como root y baja
+  #     privilegios con gosu. Con runAsNonRoot (viene de seguridad.pod y no se
+  #     relaja), Kubernetes rechazaria el pod antes de arrancarlo.
+  #   - No vale el 1000 del resto del chart: initdb exige que el usuario EXISTA
+  #     en /etc/passwd de la imagen, y falla con "could not look up effective
+  #     user ID 1000: user does not exist". Comprobado.
+  #   - 70 es el uid/gid del usuario postgres en la variante Alpine, y lo dice
+  #     el propio Dockerfile de la imagen ("70 is the standard uid/gid for
+  #     postgres in Alpine"). Si algun dia se cambia a la variante Debian, ahi
+  #     es 999, y este es el unico sitio que hay que tocar.
+  usuarioUnix: 70
+  grupoUnix: 70
   servicio: postgres
   puerto: 5432
   usuario: boutique
@@ -293,8 +307,9 @@ vault:
   #
   # A quien reiniciar cuando el valor rota NO se declara aqui: la plantilla lo
   # deduce de quien nombra ese Secret ('desdeSecreto' en servicios, 'contrasena'
-  # en redis). Una lista escrita a mano se desincronizaria del primer consumidor
-  # que alguien agregue y nadie se enteraria hasta una rotacion.
+  # en redis y en postgres). Es una decision de seguridad: si al servidor le
+  # faltara su reinicio, rotar en Vault dejaria la contrasena vieja valida sin
+  # avisar de nada. El razonamiento completo esta en templates/vault.yaml.
   secretos:
     - ruta: boutique/redis-cart
       secreto: redis-cart

@@ -16,6 +16,21 @@ la etiqueta que pase el pipeline (el SHA del commit); si no, de las imagenes
 publicas de Google fijadas en values.yaml.
 */}}
 {{/*
+"si" cuando un servicio de .Values.servicios NO se despliega en esta
+configuracion, y vacio cuando si. Hoy la unica razon es necesitar la base sin
+que la base este encendida.
+
+Existe como ayudante, y no como una condicion repetida, porque la usan DOS
+plantillas: servicios.yaml para saltarse el servicio, y vault.yaml para no
+exigir en sus guardas los Secret que ese servicio pedia. Escrita dos veces, la
+segunda se quedaria atras en cuanto hubiera otra razon para omitir un servicio,
+y el sintoma seria una guarda que falla senalando algo que no se despliega.
+*/}}
+{{- define "boutique.servicioOmitido" -}}
+{{- if and .servicio.usaPostgres (not .raiz.Values.postgres.activa) }}si{{ end }}
+{{- end -}}
+
+{{/*
 La cadena de conexion a Postgres, en UN solo sitio: la usan el userservice y el
 Job de migracion, y si discreparan el Job crearia el esquema en una base y el
 servicio lo buscaria en otra.

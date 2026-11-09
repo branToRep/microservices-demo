@@ -43,8 +43,14 @@ spec:
       labels:
         app: {{ .Values.postgres.servicio }}
     spec:
+      {{- /* seguridad.pod con el usuario de Postgres encima: mismas reglas
+             (runAsNonRoot, sin escalada, raiz de solo lectura), otro usuario no
+             root. El porque de cada numero esta en values.yaml, postgres. */}}
       securityContext:
-        {{- toYaml $.Values.seguridad.pod | nindent 8 }}
+        {{- $suyo := dict "runAsUser" .Values.postgres.usuarioUnix
+                          "runAsGroup" .Values.postgres.grupoUnix
+                          "fsGroup" .Values.postgres.grupoUnix }}
+        {{- toYaml (merge $suyo $.Values.seguridad.pod) | nindent 8 }}
       containers:
         - name: postgres
           image: postgres:16-alpine
@@ -63,12 +69,15 @@ spec:
             - name: POSTGRES_DB
               value: {{ .Values.postgres.base | quote }}
             {{- /* PGDATA en un SUBDIRECTORIO del volumen, no en su raiz, y es
-                   obligatorio aqui: initdb se niega a usar un directorio con
-                   permisos de grupo o de todos ("data directory has group or
-                   world access"), y un emptyDir con fsGroup llega en 0775. El
-                   subdirectorio lo crea initdb, con 0700. Sin esto el pod
-                   entra en ciclo de reinicios y el error no menciona el
-                   volumen. */}}
+                   obligatorio aqui.
+                   initdb no rechaza un directorio con permisos de grupo: lo
+                   ARREGLA, le hace chmod 700. Y chmod solo lo puede hacer el
+                   dueno. La raiz de un emptyDir la crea el kubelet y es de
+                   root, con el grupo de fsGroup, asi que initdb corriendo como
+                   el usuario de Postgres no puede cambiarla y muere con
+                   "could not change permissions of directory: Operation not
+                   permitted". Un subdirectorio lo crea initdb, es suyo, y lo
+                   deja en 0700 sin problema. Comprobado con initdb 16. */}}
             - name: PGDATA
               value: /var/lib/postgresql/data/pgdata
           volumeMounts:

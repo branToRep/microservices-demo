@@ -87,6 +87,23 @@ Activa, en este orden:
    recibe *permission denied*, y sin la entrada del chart el valor no llega a
    ningún Secret de Kubernetes.
 
+   > **Después de añadir un secreto, este playbook hay que volver a correrlo
+   > ANTES de desplegar el chart.** `levantar-vault.sh` corre `site.yml`, que
+   > configura la *máquina*; esto es otro playbook y nadie lo lanza solo. Si se
+   > despliega sin él, la ruta no existe y la política no la concede, los pods
+   > que esperan ese Secret se quedan en `CreateContainerConfigError`, y
+   > `helm upgrade --atomic` espera hasta su tiempo límite y revierte la
+   > release entera. Ocho minutos y un síntoma que no menciona a Vault.
+   >
+   > Comprobarlo cuesta nada, y sale a cuenta hacerlo antes de `levantar.sh`:
+   >
+   > ```bash
+   > vault policy read boutique-lectura     # tienen que estar las tres rutas
+   > for r in redis-cart redis-sessions postgres; do
+   >   vault kv metadata get "secret/boutique/$r" >/dev/null && echo "ok  $r"
+   > done
+   > ```
+
 **No** usar `vault login` con el token raíz: lo guarda en `~/.vault-token`.
 
 ## 4. Comprobar, sin revelar el secreto

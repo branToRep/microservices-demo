@@ -28,11 +28,20 @@ Los datos viven mientras viva el pod, y se pierden cuando muere.
 
 Dos detalles que no son opcionales y van comentados en la plantilla:
 
+- **El contenedor corre como el usuario `postgres` de su propia imagen**
+  (uid/gid 70 en la variante Alpine), no como el 1000 del resto del chart.
+  `initdb` exige que el usuario exista en `/etc/passwd` de la imagen y falla con
+  `could not look up effective user ID 1000: user does not exist`. Y hay que
+  fijarlo explicitamente porque la imagen oficial no trae instruccion `USER`:
+  arranca como root y baja privilegios con *gosu*, asi que con `runAsNonRoot`
+  Kubernetes rechazaria el pod. Las demas reglas no se relajan.
 - **`PGDATA` apunta a un subdirectorio** del volumen
-  (`/var/lib/postgresql/data/pgdata`), no a su raiz. `initdb` se niega a usar un
-  directorio con permisos de grupo o de todos —*data directory has group or
-  world access*— y un `emptyDir` con `fsGroup` llega en `0775`. El
-  subdirectorio lo crea `initdb`, con `0700`.
+  (`/var/lib/postgresql/data/pgdata`), no a su raiz. `initdb` no rechaza un
+  directorio con permisos de grupo: lo *arregla*, le hace `chmod 700`. Y `chmod`
+  solo lo puede hacer el dueno. La raiz de un `emptyDir` la crea el kubelet y es
+  de `root`, asi que `initdb` muere con `could not change permissions of
+  directory: Operation not permitted`. Un subdirectorio lo crea `initdb`, es
+  suyo, y lo deja en `0700`.
 - **`replicas: 1` y `strategy: Recreate`.** Con `emptyDir`, cada replica tendria
   su propia base vacia y el Service repartiria entre ellas: dos replicas aqui no
   son alta disponibilidad, son dos bases que se contradicen. `RollingUpdate`

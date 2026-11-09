@@ -14,7 +14,7 @@ diez. Aqui se edita una vez.
        de reinicios. Esto es lo que mantiene coherente el modo "cluster sin
        Vault" (vault.activa=false, postgres.activa=false), que es como se
        desplegaba antes de la 2.10.0. */}}
-{{- if and $s.usaPostgres (not $.Values.postgres.activa) }}
+{{- if include "boutique.servicioOmitido" (dict "raiz" $ "servicio" $s) }}
 {{- continue }}
 {{- end }}
 {{- $ctx := dict "raiz" $ "servicio" $s "nombre" $s.nombre }}

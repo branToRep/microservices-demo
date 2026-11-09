@@ -33,8 +33,10 @@ operador (scripts/aws/conectar-operador-vault.sh).
 {{- end }}
 {{- end }}
 {{- range $s := .Values.servicios }}
+{{- if not (include "boutique.servicioOmitido" (dict "raiz" $ "servicio" $s)) }}
 {{- range $ref := ($s.desdeSecreto | default (list)) }}
 {{- $referenciados = append $referenciados $ref.secreto }}
+{{- end }}
 {{- end }}
 {{- end }}
 {{- if and .Values.postgres.activa .Values.postgres.contrasena }}
@@ -99,9 +101,19 @@ spec:
     name: {{ $sec.secreto }}
     create: true
   {{- /* A quien reiniciar cuando el valor rota: quien lo lee al arrancar y no
-         lo vuelve a mirar. Se DEDUCE de quien nombra este Secret, no de una
-         lista escrita a mano, que se desincronizaria del primer consumidor que
-         alguien agregue sin que nadie se enterara hasta una rotacion.
+         lo vuelve a mirar. Se DEDUCE de quien nombra este Secret, nunca de una
+         lista escrita a mano, y la razon es de seguridad, no de comodidad.
+
+         --requirepass y POSTGRES_PASSWORD se leen al arrancar. Si al SERVIDOR
+         le falta su reinicio, rotar el valor en Vault actualiza el Secret de
+         Kubernetes y no cambia nada mas: el servidor sigue aceptando la
+         contrasena vieja, sin un solo error en ningun sitio. La rotacion
+         parece hecha y no revoco nada, que en un incidente es creer que
+         cerraste la puerta. Si le falta a un CLIENTE, el fallo es ruidoso y
+         solo de disponibilidad: se cae hasta que alguien lo reinicie.
+
+         Una lista a mano se desincroniza del primer consumidor que alguien
+         agregue, y el caso que se rompe en silencio es justo el grave.
 
          'kind' solo acepta Deployment, DaemonSet, StatefulSet y argo.Rollout:
          el CRD lo valida con un enum, asi que un Job aqui lo rechaza el
