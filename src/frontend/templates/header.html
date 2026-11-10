@@ -106,12 +106,15 @@
                     <a href="{{ $.baseUrl }}/account" class="cart-link" title="Mi cuenta">
                         <img src="{{ $.baseUrl }}/static/icons/Hipster_ProfileIcon.svg" style="width: 22px; height: 22px;" alt="Profile icon" class="logo" />
                     </a>
-                    <form method="POST" action="{{ $.baseUrl }}/account/logout" class="controls-form" style="display:inline;">
+                    {{/* Salir es un formulario porque cerrar sesion cambia estado
+                         (POST con CSRF), y un formulario no se centra solo como
+                         los enlaces de al lado: lo hace header .header-salir. */}}
+                    <form method="POST" action="{{ $.baseUrl }}/account/logout" class="header-salir">
                         <input type="hidden" name="csrf_token" value="{{ $.csrf_token }}">
-                        <button type="submit" class="cart-link" style="background:none;border:none;padding:0 0 0 8px;cursor:pointer;font:inherit;color:inherit;">Salir</button>
+                        <button type="submit" class="header-texto">Salir</button>
                     </form>
                     {{ else }}
-                    <a href="{{ $.baseUrl }}/login" class="cart-link" style="padding-left:8px;">Entrar</a>
+                    <a href="{{ $.baseUrl }}/login" class="cart-link header-texto">Entrar</a>
                     {{ end }}
                 </div>
             </div>

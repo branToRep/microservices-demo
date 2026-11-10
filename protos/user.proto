@@ -21,8 +21,8 @@ option go_package = "github.com/GoogleCloudPlatform/microservices-demo/hipstersh
 // -----------------------------------------------------------------------------
 // UserService: accounts and sessions
 //
-// Minimalistic scope: registration, login and logout, basic profile. 
-// No additional functions.
+// Minimalistic scope: registration, login and logout, basic profile, and
+// deleting the account (v3.1.0). No additional functions.
 // -----------------------------------------------------------------------------
 service UserService {
     // Create account and open session
@@ -45,6 +45,10 @@ service UserService {
 
     // Password change
     rpc ChangePassword(ChangePasswordRequest) returns (UserEmpty) {}
+
+    // Deletes the account for good and closes all its sessions.
+    // Asks for the password again, like ChangePassword (v3.1.0).
+    rpc DeleteUser(DeleteUserRequest) returns (UserEmpty) {}
 }
 
 message UserEmpty {}
@@ -120,4 +124,9 @@ message ChangePasswordRequest {
     string current_password = 2;
     string new_password = 3;
     string keep_session_token = 4;  // this session persists
+}
+
+message DeleteUserRequest {
+    string user_id = 1;
+    string password = 2;        // current password, checked before deleting
 }

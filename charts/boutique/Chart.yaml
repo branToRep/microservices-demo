@@ -13,8 +13,8 @@ icon: https://raw.githubusercontent.com/GoogleCloudPlatform/microservices-demo/m
 #
 # Se mueven por separado a proposito: tocar una plantilla sube 'version' sin
 # que cambie el codigo desplegado.
-version: 2.1.0
-appVersion: "3.0.0"
+version: 2.1.1
+appVersion: "3.1.0"
 
 maintainers:
   - name: Equipo del proyecto

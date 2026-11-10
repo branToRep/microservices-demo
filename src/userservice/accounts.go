@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Las cuentas: alta, autenticacion, perfil y cambio de contrasena.
+// Las cuentas: alta, autenticacion, perfil, cambio de contrasena y baja.
 //
 // Cuatro decisiones de seguridad gobiernan este archivo, y cada una esta
 // comentada donde se aplica:
@@ -355,5 +355,75 @@ func (s *servidor) ChangePassword(ctx context.Context, req *pb.ChangePasswordReq
 		log.Printf("aviso: no se pudieron cerrar las otras sesiones de %s: %v", req.GetUserId(), err)
 	}
 
+	return &pb.UserEmpty{}, nil
+}
+
+// ---------------------------------------------------------------- DeleteUser
+
+// DeleteUser borra la cuenta para siempre (v3.1.0, ADR 0025). El orden de los
+// pasos es lo que importa, porque Redis y Postgres no comparten transaccion:
+//
+//  1. La contrasena se exige otra vez, como en ChangePassword: una sesion
+//     abierta en un navegador ajeno no basta para borrar la cuenta de nadie.
+//  2. Se cierran TODAS las sesiones antes de borrar. Si esto falla, no se
+//     borra nada y quien llama puede reintentar. Al reves, un fallo dejaria
+//     tokens vivos que apuntan a una cuenta que ya no existe.
+//  3. La cuenta y su fila de login_attempts se borran en UNA sentencia: o se
+//     van las dos o ninguna, y el correo no se queda guardado en el contador
+//     despues de la baja.
+//  4. Se cierran las sesiones otra vez, por si alguien entro entre el paso 2 y
+//     el 3. Si este segundo barrido falla, la cuenta YA se borro y eso vale;
+//     solo queda registrado, como en ChangePassword.
+//
+// Queda un hueco que no se cierra sin una transaccion comun: un inicio de
+// sesion que leyo la cuenta antes del paso 3 y abre su sesion despues del 4.
+// Exige la contrasena correcta en ese mismo instante, y esa sesion no lleva a
+// nada: GetUser responde NotFound y el frontend la trata como cerrada.
+func (s *servidor) DeleteUser(ctx context.Context, req *pb.DeleteUserRequest) (*pb.UserEmpty, error) {
+	id := req.GetUserId()
+	if id == "" {
+		return nil, status.Error(codes.InvalidArgument, "falta el id de usuario")
+	}
+
+	// (1)
+	var hash string
+	err := s.pool.QueryRow(ctx, `SELECT password_hash FROM users WHERE id = $1`, id).Scan(&hash)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, status.Error(codes.NotFound, "esa cuenta no existe")
+		}
+		return nil, status.Error(codes.Internal, "no se pudo eliminar la cuenta")
+	}
+	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(req.GetPassword())) != nil {
+		return nil, status.Error(codes.Unauthenticated, "la contrasena no es correcta")
+	}
+
+	// (2)
+	if err := s.revocarTodasLasSesiones(ctx, id); err != nil {
+		return nil, status.Error(codes.Unavailable, "el almacen de sesiones no responde")
+	}
+
+	// (3) Las CTE que modifican datos se ejecutan todas, se lean o no, y dentro
+	// de la misma sentencia: Postgres las aplica juntas o ninguna.
+	var borradas int
+	err = s.pool.QueryRow(ctx, `
+		WITH cuenta AS (
+			DELETE FROM users WHERE id = $1 RETURNING email
+		), intentos AS (
+			DELETE FROM login_attempts WHERE email IN (SELECT email FROM cuenta)
+		)
+		SELECT count(*) FROM cuenta`, id).Scan(&borradas)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "no se pudo eliminar la cuenta")
+	}
+	if borradas == 0 {
+		// Otra peticion la borro entre la lectura y aqui.
+		return nil, status.Error(codes.NotFound, "esa cuenta no existe")
+	}
+
+	// (4)
+	if err := s.revocarTodasLasSesiones(ctx, id); err != nil {
+		log.Printf("aviso: cuenta %s borrada, pero no se pudo repetir el cierre de sesiones: %v", id, err)
+	}
 	return &pb.UserEmpty{}, nil
 }
