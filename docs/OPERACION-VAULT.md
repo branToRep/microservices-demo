@@ -6,7 +6,7 @@ Paso 7 de la Fase III. La máquina ya existe y Vault responde, sin inicializar
 llaves de desellado, y si lo hiciera un script, las llaves acabarían en un
 archivo.
 
-Todo se corre en WSL, desde la raíz del repositorio.
+Todo se corre desde la raíz del repositorio, en WSL o en macOS.
 
 ```bash
 export VAULT_ADDR=$(terraform -chdir=infra/aws/envs/vault output -raw vault_addr)
@@ -60,9 +60,15 @@ El token raíz, **sin que pase por el historial**:
 ```bash
 read -rs VAULT_TOKEN && export VAULT_TOKEN      # pegar el token y Enter; no se ve
 cd ansible && export ANSIBLE_CONFIG=$PWD/ansible.cfg
-ansible-playbook configurar-vault.yml           # changed=3
+ansible-playbook configurar-vault.yml           # la primera vez cambia cosas: ver la nota
 ansible-playbook configurar-vault.yml           # changed=0
 ```
+
+> **La cifra de `changed` en la primera corrida**, medida en la 2.14.0 sobre una
+> Vault nueva y con `VAULT_USUARIO` ya puesto (este paso y el 5.1 en una sola
+> corrida): `changed=8`. Esta guía decía `changed=3`, una cifra de antes de que
+> el playbook gestionara también las políticas, el método del clúster y los
+> usuarios. La segunda corrida sí es `changed=0`.
 
 Activa, en este orden:
 
@@ -219,10 +225,18 @@ de entrar (además de regenerar el raíz con las llaves, abajo).
 
 ```bash
 read -rs RAIZ                                     # el token raíz, por última vez
+VAULT_TOKEN=$RAIZ vault token lookup | grep display_name  # ANTES: tiene que decir root
 VAULT_TOKEN=$RAIZ vault token revoke -self        # Success! Revoked token
 VAULT_TOKEN=$RAIZ vault token lookup              # 403 permission denied
 unset RAIZ
 ```
+
+**El `lookup` de antes no es decorativo.** `vault token revoke -self` dice
+`Success!` aunque `RAIZ` esté vacía (por ejemplo, si se pulsó Enter antes de
+pegar). Y con la variable vacía, Vault no usa ningún raíz: usa la sesión de
+`~/.vault-token`, así que revoca **tu propia sesión**, el raíz sigue vivo, y el
+`lookup` de después da el mismo `403` que si todo hubiera ido bien. Mirar el
+`display_name` antes de revocar es lo único que distingue los dos casos.
 
 Borrarlo también del gestor de contraseñas: ya no sirve para nada.
 
