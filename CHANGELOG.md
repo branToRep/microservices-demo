@@ -14,10 +14,12 @@ fallos (`docs/PORTAFOLIO-FASE-III.md`). Lo que queda es producto, sin numero
 de version asignado: se numera al empezarlo, segun `docs/VERSIONADO.md`.
 
 ### Pendiente
-- (#64) Desplegarlo en el cluster, con su Postgres. Sus credenciales serian el
-  segundo secreto de Vault, por el mismo camino que la contrasena de Redis.
 - (#65) El inicio de sesion. Restaura ademas el cableado que quito la 1.5.1
-  (ADR 0017), asi que sera el diff mas grande del proyecto.
+  (ADR 0017), asi que sera el diff mas grande del proyecto. Ojo con el ADR: dice
+  que `git revert` de su commit devuelve el cableado, y no es asi. Ese commit
+  (`c529f29e`) tambien anadio los protos generados de wishlist, el script que
+  los genera y dos ADR, y el squash los fundio en uno. Sirve como mapa
+  (`git show c529f29e -- src/frontend/`), no para revertirlo.
 
 ### Mejoras posibles, no bloqueantes
 - Construir tambien las diez imagenes de Google, para no depender de su registro.
@@ -30,6 +32,110 @@ de version asignado: se numera al empezarlo, segun `docs/VERSIONADO.md`.
   control cuando se va a volver el mismo dia.
 - Desellar con AWS KMS (*auto-unseal*) en vez de llaves por teclado. Hoy no se
   puede: el laboratorio no deja crear el rol de IAM que lo autorizaria.
+- `levantar.sh` podria comprobar, antes de `helm`, que las rutas que el chart
+  espera existen en Vault. Hoy, si falta una, `--atomic` espera ocho minutos y
+  revierte, con un sintoma que no menciona a Vault.
+- `levantar-vault.sh` podria detectar una llave SSH con frase de paso y pararse
+  con un mensaje claro: Ansible no puede teclearla, y lo unico que se ve es
+  `Permission denied (publickey)`.
+- Dos operadores, un solo hueco. Los secretos `AWS_*` de GitHub hacen que el
+  pipeline despliegue en la cuenta de quien sincronizo ultimo, y la variable
+  `TF_BUCKET` no existe, asi que el trabajo *Plan* no ha corrido nunca. Lo
+  limpio es que cada cuenta sepa encontrar su propio bucket.
+- El esquema se aplica dos veces: al arrancar el `userservice` y en el Job. Es
+  idempotente (`IF NOT EXISTS`), pero con varias replicas dos `CREATE TABLE`
+  simultaneos pueden chocar. Lo limpio es que solo lo aplique el Job.
+- Las acciones de GitHub siguen en versiones para Node 20, ya obsoleto.
+- El CI fija Helm 3.16.3, y una version local mas nueva ya avisa de que
+  `--atomic` esta obsoleto (en su lugar, `--rollback-on-failure`). Sigue
+  funcionando; conviene fijar la misma version en la maquina del operador.
+
+## [2.14.0] - 2026-11-09
+
+**El `userservice` corre en el cluster.** Con su Postgres, su Redis de sesiones
+y el Job que aplica el esquema, y con las tres credenciales servidas por Vault.
+La tienda todavia no lo usa: el inicio de sesion es el #65.
+
+MENOR: aparece una capacidad nueva y no cambia lo que la tienda hace hoy.
+
+### Anadido
+- `charts/boutique/templates/postgres.yaml` — Postgres con `emptyDir` (ADR 0023),
+  una replica y `Recreate`, corriendo como el usuario de su propia imagen
+  (uid 70); su Service; y el Job de migracion, como hook
+  `post-install,post-upgrade` con `before-hook-creation`.
+- `redis-sessions`, aparte de `redis-cart` y con contrasena: un token de sesion
+  es una credencial al portador.
+- Dos secretos en Vault, `boutique/redis-sessions` y `boutique/postgres`. La
+  politica `boutique-lectura` enumera las tres rutas, sin comodin.
+- `AUTH` en el cliente RESP del `userservice` (`REDIS_PASSWORD`), en `dial()`:
+  es por conexion, no por orden. Un `AUTH` rechazado no se reintenta.
+- Dos guardas que fallan al rendir el chart: un Secret pedido que ningun
+  `vault.secretos` crea, y Postgres encendido sin Vault.
+- `docs/adr/0023` — Postgres con `emptyDir`, y por que: el cluster no instala
+  `aws-ebs-csi-driver` y se destruye en cada sesion.
+
+### Cambiado
+- `contrasenaRedis` desaparece. Lo sustituye `desdeSecreto` por entrada, y la
+  peculiaridad de `cartservice` (la contrasena dentro de `REDIS_ADDR`) pasa a ser
+  una bandera declarada, `redisAddrConContrasena`. **Rompe** cualquier
+  `--set contrasenaRedis...`: de ahi el chart 2.0.0.
+- A quien reinicia cada `VaultStaticSecret` cuando el valor rota se **deduce** de
+  quien nombra ese Secret, nunca de una lista a mano. Es una decision de
+  seguridad: si al servidor le faltara su reinicio, rotar en Vault dejaria la
+  contrasena vieja valida sin un solo error.
+- `vault.ruta` pasa a ser `vault.secretos`, una lista, y Ansible genera las
+  contrasenas en un bucle sobre `vault_config_secretos`.
+- `charts/boutique/Chart.yaml` — `version` 1.2.0 -> 2.0.0 y `appVersion`
+  2.2.0 -> 2.14.0. La `appVersion` llevaba sin moverse desde la 2.2.0, y el PR
+  #130 cambio plantillas sin subir `version`.
+- `terraform-ci.yml` — `OBJETOS_CHART` 41 -> 51.
+- `docs/OPERACION-VAULT.md` — las tres rutas; que anadir un secreto obliga a
+  correr `configurar-vault.yml` **antes** del chart; la cifra de `changed`
+  medida; y mirar el `display_name` antes de revocar el token raiz.
+
+### Corregido
+- El enlace `[Sin publicar]` del pie seguia comparando contra la 2.12.2.
+
+### Resultado medido
+Sin AWS, 16 de 16 (`helm`, Go y Docker): 51 objetos rendidos; las tres ramas de
+la primera guarda y la segunda fallan cuando deben; Postgres arranca en Docker
+con las restricciones exactas del pod; y el `userservice` crea una sesion contra
+un Redis con contrasena.
+
+En el cluster (2026-11-09), con una Vault nueva en una cuenta sin nada previo:
+
+- `configurar-vault.yml`: la primera corrida, con el raiz y `VAULT_USUARIO`,
+  `changed=8 failed=0` y las tres contrasenas creadas; la segunda, ya con el
+  usuario y sin raiz, `changed=0`.
+- La release `boutique` en su revision 1, todos los pods listos y ningun
+  reinicio.
+- Los tres `VaultStaticSecret` en `SecretSynced`, y el operador disparo
+  exactamente los reinicios deducidos: `postgres` a `postgres` y `userservice`;
+  `redis-sessions` a `redis-sessions` y `userservice`; `redis-cart` a
+  `redis-cart` y `cartservice`, como antes.
+- Postgres como uid 70, `PGDATA` en `700` y propiedad de `postgres`, con las
+  tablas `users` y `login_attempts`.
+- El Job de migracion `Complete 1/1` en 5 s, despues de que el `userservice`
+  estuviera listo: el orden del hook `post-install`.
+- Punta a punta: `CreateUser` -> `ValidateSession` -> `Logout` ->
+  `ValidateSession` = `Unauthenticated`, con la contrasena de Postgres y el
+  `AUTH` de `redis-sessions` servidos por Vault.
+- La tienda responde 200.
+- Un segundo despliegue (`helm upgrade`, revision 2, ya con el chart 2.0.0):
+  `Upgrade complete`, y el Job de migracion es uno nuevo, de 32 s de edad y
+  `Complete 1/1` en 4 s. La politica `before-hook-creation` borro el anterior: el
+  `field is immutable` que habria revertido cada despliegue a partir del
+  segundo no aparece.
+### Lo que encontro ponerlo en marcha
+Como cada mecanismo nuevo de este proyecto, este tambien encontro algo en su
+primer uso real:
+
+| Que | Donde aparecio | Que se hizo |
+|---|---|---|
+| `initdb` exige que el usuario exista en `/etc/passwd`: con el 1000 del chart, Postgres no habria arrancado nunca | En Docker, antes de gastar una sesion de laboratorio | Corre como el uid 70 de su imagen |
+| La razon escrita del `PGDATA` en subdirectorio era falsa: `initdb` no rechaza el 0775, le hace `chmod 700`, y eso solo lo puede hacer el dueno | Probando `initdb` a mano | Razon corregida en la plantilla y en el ADR |
+| `configurar-vault.yml` no lo lanza ningun script | Leyendo `levantar-vault.sh` antes del laboratorio | Aviso en `OPERACION-VAULT.md` |
+| `vault token revoke -self` dice `Success` con la variable vacia, y entonces revoca tu propia sesion | La primera revocacion real | Comprobar el `display_name` antes |
 
 ## [2.13.1] - 2026-10-31
 
@@ -1176,7 +1282,8 @@ aplicacion y no como un cambio de plataforma.
 - El nombre del bucket del estado esta escrito a fuego en `backend.tf`. En otra
   computadora hay que cambiarlo a mano; se arregla en la 1.1.0.
 
-[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v2.12.2...HEAD
+[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v2.14.0...HEAD
+[2.14.0]: https://github.com/branToRep/microservices-demo/compare/v2.13.1...v2.14.0
 [2.13.1]: https://github.com/branToRep/microservices-demo/compare/v2.13.0...v2.13.1
 [2.13.0]: https://github.com/branToRep/microservices-demo/compare/v2.12.2...v2.13.0
 [2.12.2]: https://github.com/branToRep/microservices-demo/compare/v2.12.1...v2.12.2
