@@ -84,6 +84,9 @@ type frontendServer struct {
 	wishlistSvcAddr string
 	wishlistSvcConn *grpc.ClientConn
 
+	userSvcAddr string
+	userSvcConn *grpc.ClientConn
+
 	collectorAddr string
 	collectorConn *grpc.ClientConn
 
@@ -140,6 +143,7 @@ func main() {
 	mustMapEnv(&svc.adSvcAddr, "AD_SERVICE_ADDR")
 	mustMapEnv(&svc.shoppingAssistantSvcAddr, "SHOPPING_ASSISTANT_SERVICE_ADDR")
 	mapEnvWithDefault(&svc.wishlistSvcAddr, "WISHLIST_SERVICE_ADDR", "wishlistservice:8080")
+	mapEnvWithDefault(&svc.userSvcAddr, "USER_SERVICE_ADDR", "userservice:8080")
 
 	mustConnGRPC(ctx, &svc.currencySvcConn, svc.currencySvcAddr)
 	mustConnGRPC(ctx, &svc.productCatalogSvcConn, svc.productCatalogSvcAddr)
@@ -149,8 +153,10 @@ func main() {
 	mustConnGRPC(ctx, &svc.checkoutSvcConn, svc.checkoutSvcAddr)
 	mustConnGRPC(ctx, &svc.adSvcConn, svc.adSvcAddr)
 	mustConnGRPC(ctx, &svc.wishlistSvcConn, svc.wishlistSvcAddr)
+	mustConnGRPC(ctx, &svc.userSvcConn, svc.userSvcAddr)
 
 	wishlistSvc = newWishlistClient(svc.wishlistSvcConn)
+	userSvc = newUserClient(svc.userSvcConn)
 
 	r := mux.NewRouter()
 	r.HandleFunc(baseUrl+"/", svc.homeHandler).Methods(http.MethodGet, http.MethodHead)
@@ -170,8 +176,14 @@ func main() {
 	r.HandleFunc(baseUrl+"/wishlist/{id}/remove", svc.removeFromWishlistHandler).Methods(http.MethodPost)
 	r.HandleFunc(baseUrl+"/wishlist/{id}/move-to-cart", svc.moveToCartHandler).Methods(http.MethodPost)
 	r.HandleFunc(baseUrl+"/wishlist/{id}/move", svc.moveBetweenListsHandler).Methods(http.MethodPost)
-	// Las rutas de cuentas (/login, /register, /account) llegan en la v3.0.0,
-	// junto con auth.go, merge.go, sus plantillas y el src/userservice/.
+	r.HandleFunc(baseUrl+"/login", svc.viewLoginHandler).Methods(http.MethodGet, http.MethodHead)
+	r.HandleFunc(baseUrl+"/login", svc.loginHandler).Methods(http.MethodPost)
+	r.HandleFunc(baseUrl+"/register", svc.viewRegisterHandler).Methods(http.MethodGet, http.MethodHead)
+	r.HandleFunc(baseUrl+"/register", svc.registerHandler).Methods(http.MethodPost)
+	r.HandleFunc(baseUrl+"/account", svc.viewAccountHandler).Methods(http.MethodGet, http.MethodHead)
+	r.HandleFunc(baseUrl+"/account", svc.updateAccountHandler).Methods(http.MethodPost)
+	r.HandleFunc(baseUrl+"/account/password", svc.changePasswordHandler).Methods(http.MethodPost)
+	r.HandleFunc(baseUrl+"/account/logout", svc.logoutAccountHandler).Methods(http.MethodPost)
 	r.HandleFunc(baseUrl+"/assistant", svc.assistantHandler).Methods(http.MethodGet)
 	r.PathPrefix(baseUrl + "/static/").Handler(http.StripPrefix(baseUrl+"/static/", http.FileServer(http.Dir("./static/"))))
 	r.HandleFunc(baseUrl+"/robots.txt", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, "User-agent: *\nDisallow: /") })
@@ -180,6 +192,7 @@ func main() {
 	r.HandleFunc(baseUrl+"/bot", svc.chatBotHandler).Methods(http.MethodPost)
 
 	var handler http.Handler = r
+	handler = withUser(handler)                        // resolve the signed-in account, if any
 	handler = &logHandler{log: log, next: handler}     // add logging
 	handler = ensureSessionID(handler)                 // add session ID
 	handler = otelhttp.NewHandler(handler, "frontend") // add OTel tracing

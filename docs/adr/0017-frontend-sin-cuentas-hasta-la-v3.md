@@ -50,3 +50,12 @@ que archivos, para que el hueco se lea como intencional.
   `git log --oneline -S viewLoginHandler -- src/frontend/main.go`.
 - `git revert` de ese commit devuelve el cableado en un paso, aunque sigue
   haciendo falta anadir a mano los archivos que nunca estuvieron.
+- **Corregido en la v3.0.0 (#65): el `git revert` de arriba no sirve.** El
+  commit `c529f29e` no solo quito el cableado: tambien anadio el codigo generado
+  de wishlist, `scripts/generar-protos.sh` y los ADR 0016 y 0017, y el squash
+  del PR #77 lo fundio todo en uno. Revertirlo borraria esas piezas. Lo que si
+  sirvio fue usarlo como mapa: `git show c529f29e -- src/frontend/` muestra las
+  41 lineas exactas, y se volvieron a escribir a mano junto con lo que nunca
+  estuvo (ADR 0024). La leccion es general: con fusion por squash, un consejo de
+  la forma "revierte el commit X" deja de ser cierto en cuanto X lleva mas de un
+  cambio.

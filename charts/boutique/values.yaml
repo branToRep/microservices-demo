@@ -188,7 +188,11 @@ servicios:
     sondaVida: {initialDelaySeconds: 75, periodSeconds: 10}
     cpu: 100m
     memoria: 64Mi
-    cpuMax: 200m
+    # 500m y no 200m como el resto: bcrypt es CPU pura y lento a proposito. Con
+    # 200m, una operacion tardaba entre 0,5 y 1 s y cambiar la contrasena (dos
+    # operaciones) 3,1 s, medido en el cluster por la prueba del #65. La
+    # peticion se queda en 100m: el pico solo se usa al entrar o registrarse.
+    cpuMax: 500m
     memoriaMax: 128Mi
     desdeSecreto:
       - variable: POSTGRES_PASSWORD
@@ -345,6 +349,13 @@ frontend:
     # entra en panico si falta. Quitarla impide que el frontend arranque.
     SHOPPING_ASSISTANT_SERVICE_ADDR: "shoppingassistantservice:80"
     WISHLIST_SERVICE_ADDR: "wishlistservice:8080"
+    # El userservice (v3.0.0). Si no esta, el frontend arranca igual: nadie
+    # puede entrar y cada visita se trata como anonima.
+    USER_SERVICE_ADDR: "userservice:8080"
+    # La marca Secure de las cookies de sesion y de CSRF. "0" mientras la tienda
+    # vaya por HTTP: con "1" el navegador no las mandaria y entrar fallaria sin
+    # ningun error. Se enciende el dia que el balanceador tenga TLS (ADR 0024).
+    COOKIE_SEGURA: "0"
     ENABLE_PROFILER: "0"
 
 # -----------------------------------------------------------------------------
