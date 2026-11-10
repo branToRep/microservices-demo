@@ -184,6 +184,7 @@ func main() {
 	r.HandleFunc(baseUrl+"/account", svc.updateAccountHandler).Methods(http.MethodPost)
 	r.HandleFunc(baseUrl+"/account/password", svc.changePasswordHandler).Methods(http.MethodPost)
 	r.HandleFunc(baseUrl+"/account/logout", svc.logoutAccountHandler).Methods(http.MethodPost)
+	r.HandleFunc(baseUrl+"/account/delete", svc.deleteAccountHandler).Methods(http.MethodPost)
 	r.HandleFunc(baseUrl+"/assistant", svc.assistantHandler).Methods(http.MethodGet)
 	r.PathPrefix(baseUrl + "/static/").Handler(http.StripPrefix(baseUrl+"/static/", http.FileServer(http.Dir("./static/"))))
 	r.HandleFunc(baseUrl+"/robots.txt", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, "User-agent: *\nDisallow: /") })

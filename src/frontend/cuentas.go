@@ -15,7 +15,7 @@
 package main
 
 // Las rutas de cuentas: entrar, registrarse, ver y editar la cuenta, cambiar la
-// contrasena y salir. Llevan los nombres que dejo el cableado de pruebas que
+// contrasena, salir y eliminar la cuenta (v3.1.0). Llevan los nombres que dejo el cableado de pruebas que
 // quito la 1.5.1 (ADR 0017), para que encajen con aquel mapa.
 //
 // Todo POST de cuentas exige el token CSRF (auth.go). Los errores que son de
@@ -92,6 +92,26 @@ func rechazarCSRF(log logrus.FieldLogger, w http.ResponseWriter, r *http.Request
 	renderHTTPError(log, r, w, errors.New("el formulario no trae un token CSRF valido"), http.StatusForbidden)
 }
 
+// esCuentaInexistente dice si el userservice respondio que la cuenta no existe.
+func esCuentaInexistente(err error) bool {
+	return status.Code(err) == codes.NotFound
+}
+
+// sesionHuerfana atiende una sesion valida cuya cuenta ya no existe: GetUser o
+// DeleteUser responden NotFound. Pasa si la cuenta se borro mientras habia otra
+// sesion abriendose (ver DeleteUser en el userservice). Se trata como una
+// sesion cerrada, y no como un error 500: se cierra en el servidor, se borra la
+// cookie y se lleva a entrar.
+func sesionHuerfana(w http.ResponseWriter, r *http.Request, log logrus.FieldLogger) {
+	if t := authToken(r); t != "" {
+		if err := userSvc.logout(r.Context(), t); err != nil {
+			log.WithField("err", err).Warn("no se pudo cerrar una sesion sin cuenta")
+		}
+	}
+	borrarCookieSesion(w)
+	redirigir(w, "/login")
+}
+
 // abrirSesion pone la cookie, fusiona el carrito anonimo y lleva a la portada.
 func (fe *frontendServer) abrirSesion(w http.ResponseWriter, r *http.Request, log logrus.FieldLogger, s *pb.Session) {
 	ponerCookieSesion(w, s)
@@ -107,7 +127,11 @@ func (fe *frontendServer) viewLoginHandler(w http.ResponseWriter, r *http.Reques
 		redirigir(w, "/account")
 		return
 	}
-	fe.renderCuenta(w, r, log, "login", http.StatusOK, nil)
+	var datos map[string]interface{}
+	if r.URL.Query().Get("ok") == "eliminada" {
+		datos = map[string]interface{}{"message": "Tu cuenta se eliminó."}
+	}
+	fe.renderCuenta(w, r, log, "login", http.StatusOK, datos)
 }
 
 func (fe *frontendServer) loginHandler(w http.ResponseWriter, r *http.Request) {
@@ -187,6 +211,10 @@ func (fe *frontendServer) viewAccountHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	perfil, err := userSvc.get(r.Context(), u.ID)
+	if esCuentaInexistente(err) {
+		sesionHuerfana(w, r, log)
+		return
+	}
 	if err != nil {
 		renderHTTPError(log, r, w, errors.Wrap(err, "no se pudo leer la cuenta"), http.StatusInternalServerError)
 		return
@@ -205,6 +233,10 @@ func (fe *frontendServer) viewAccountHandler(w http.ResponseWriter, r *http.Requ
 // toca (campo), sin perder lo que la persona escribio en el de perfil.
 func (fe *frontendServer) cuentaConError(w http.ResponseWriter, r *http.Request, log logrus.FieldLogger, u *sesionUsuario, escrito *pb.User, campo, msg string, codigo int) {
 	perfil, err := userSvc.get(r.Context(), u.ID)
+	if esCuentaInexistente(err) {
+		sesionHuerfana(w, r, log)
+		return
+	}
 	if err != nil {
 		renderHTTPError(log, r, w, errors.Wrap(err, "no se pudo leer la cuenta"), http.StatusInternalServerError)
 		return
@@ -318,4 +350,54 @@ func (fe *frontendServer) logoutAccountHandler(w http.ResponseWriter, r *http.Re
 	}
 	borrarCookieSesion(w)
 	redirigir(w, "/")
+}
+
+// ------------------------------------------------------- eliminar la cuenta
+
+// deleteAccountHandler borra la cuenta. Pide dos cosas ademas del CSRF: la
+// contrasena, que comprueba el userservice, y una casilla marcada, que se
+// comprueba aqui aunque el formulario la marque como obligatoria (el atributo
+// required lo aplica el navegador, y una peticion hecha a mano no lo trae).
+//
+// Despues de borrar vacia el carrito de la cuenta, que vive en redis-cart con
+// el id como llave y nadie volveria a pedir. Si eso falla la cuenta YA se
+// borro, asi que solo queda registrado. Las listas de deseos no se tocan: son
+// del navegador, no de la cuenta (ADR 0024).
+func (fe *frontendServer) deleteAccountHandler(w http.ResponseWriter, r *http.Request) {
+	log := r.Context().Value(ctxKeyLog{}).(logrus.FieldLogger)
+	u := currentUser(r)
+	if u == nil {
+		redirigir(w, "/login")
+		return
+	}
+	if !csrfValido(r) {
+		rechazarCSRF(log, w, r)
+		return
+	}
+	if r.PostFormValue("confirmar") != "si" {
+		fe.cuentaConError(w, r, log, u, nil, "del_error",
+			"Marca la casilla para confirmar que quieres eliminar la cuenta.", http.StatusBadRequest)
+		return
+	}
+	err := userSvc.deleteUser(r.Context(), u.ID, r.PostFormValue("password"))
+	if esCuentaInexistente(err) {
+		sesionHuerfana(w, r, log)
+		return
+	}
+	if err != nil {
+		msg, codigo, ok := respuestaCuenta(err, map[codes.Code]string{
+			codes.Unauthenticated: "La contraseña no es correcta.",
+		})
+		if !ok {
+			renderHTTPError(log, r, w, errors.Wrap(err, "no se pudo eliminar la cuenta"), codigo)
+			return
+		}
+		fe.cuentaConError(w, r, log, u, nil, "del_error", msg, codigo)
+		return
+	}
+	if err := fe.emptyCart(r.Context(), u.ID); err != nil {
+		log.WithField("err", err).Warn("cuenta eliminada, pero no se pudo vaciar su carrito")
+	}
+	borrarCookieSesion(w)
+	redirigir(w, "/login?ok=eliminada")
 }

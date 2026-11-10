@@ -9,9 +9,9 @@ La convencion concreta de este repositorio esta en [`docs/VERSIONADO.md`](docs/V
 ## [Sin publicar]
 
 La Fase III esta cerrada en la 2.12.2 (`docs/PORTAFOLIO-FASE-III.md`), y el
-plan de producto en la 3.0.0: la tienda tiene cuentas. Lo que queda son
-mejoras, sin numero de version asignado: se numera al empezarlas, segun
-`docs/VERSIONADO.md`.
+plan de producto en la 3.0.0: la tienda tiene cuentas (y desde la 3.1.0 se
+pueden eliminar). Lo que queda son mejoras, sin numero de version asignado: se
+numera al empezarlas, segun `docs/VERSIONADO.md`.
 
 ### Mejoras posibles, no bloqueantes
 - TLS en el balanceador, y entonces `COOKIE_SEGURA=1`. Mientras no lo haya, el
@@ -20,6 +20,12 @@ mejoras, sin numero de version asignado: se numera al empezarlas, segun
   protege el `SameSite=Lax` de la cookie de sesion: un ataque desde otro sitio
   actua como anonimo y no toca ninguna cuenta.
 - Listas de deseos por cuenta, con su propia regla de fusion al entrar.
+- Contar para el bloqueo las contrasenas malas de `ChangePassword` y
+  `DeleteUser`, no solo las del inicio de sesion. Las dos piden una sesion
+  abierta, pero con una sesion robada hoy se pueden probar sin limite (ADR 0025).
+- Cuentas que sobrevivan al pod: el addon `aws-ebs-csi-driver` y un
+  PersistentVolumeClaim. Hoy no se puede: el driver necesita un rol de IAM que
+  el laboratorio no deja crear (ADR 0023).
 - Construir tambien las diez imagenes de Google, para no depender de su registro.
   Hoy usamos las oficiales fijadas a `v0.10.6`; anadirlas a la matriz del
   workflow es una linea. No se hace porque no hemos tocado ese codigo.
@@ -47,6 +53,57 @@ mejoras, sin numero de version asignado: se numera al empezarlas, segun
 - El CI fija Helm 3.16.3, y una version local mas nueva ya avisa de que
   `--atomic` esta obsoleto (en su lugar, `--rollback-on-failure`). Sigue
   funcionando; conviene fijar la misma version en la maquina del operador.
+
+## [3.1.0] - 2026-11-09
+
+**La cuenta se puede eliminar.** Desde *Mi cuenta*, con la contrasena y una
+casilla de confirmacion: se borran la cuenta, su fila de intentos, todas sus
+sesiones y su carrito. Y dos arreglos de dibujo: el selector de listas de
+deseos y el boton *Salir*.
+
+MENOR: aparece una capacidad nueva y no cambia nada de lo que ya habia.
+
+### Anadido
+- `DeleteUser` en `protos/user.proto` y en el `userservice`: comprueba la
+  contrasena, cierra todas las sesiones, borra `users` y `login_attempts` en una
+  sola sentencia, y vuelve a cerrar sesiones por si alguien entro en medio. El
+  orden esta razonado en `docs/adr/0025`.
+- `POST /account/delete` en el frontend, con CSRF, la contrasena y la casilla
+  (comprobada en el servidor). Vacia el carrito de la cuenta y lleva a *Entrar*
+  con el aviso "Tu cuenta se eliminó".
+- La seccion *Eliminar la cuenta* en `account.html`. Dice tambien lo que no se
+  borra: las listas de deseos, que son del navegador.
+- Los stubs regenerados en los dos servicios, con el script de siempre
+  (ADR 0016).
+
+### Cambiado
+- Una sesion cuya cuenta ya no existe (`NotFound`) se trata como cerrada: se
+  revoca, se borra la cookie y se lleva a *Entrar*. Antes daba un 500.
+
+### Corregido
+- El selector de listas de deseos de la ficha de producto se cortaba
+  ("+ New wi") y la flecha se le montaba encima: reutilizaba la clase del
+  selector de cantidad, de 100 px. Ahora tiene la suya, de 240 px, igual que el
+  campo del nombre, y el boton cae al lado o debajo segun haga falta.
+- *Salir* salia pegado arriba del encabezado y en gris: es un formulario (cerrar
+  sesion es un POST con CSRF) y no se centraba como los enlaces de al lado.
+  *Entrar* tambien salia gris. Los dos tienen ahora sus clases en `styles.css`,
+  sin estilos en linea.
+
+### Resultado medido
+- Los stubs regenerados salen byte a byte identicos en el `userservice` y en el
+  frontend; `gofmt` limpio.
+- **34 de 34** en una prueba que no necesita el laboratorio: Postgres y los dos
+  Redis en Docker, el carrito, el catalogo y las monedas de Google, y el
+  `userservice` y el frontend de la rama compilados en local. Ademas de recorrer
+  la tienda como un navegador, mira dentro de la base y de los Redis.
+- Sin token CSRF: 403. Sin la casilla: 400. Con la contrasena mala: 401. Tras
+  los tres rechazos, la cuenta y la sesion siguen ahi.
+- Al eliminar: la fila de `users` desaparece, su fila de `login_attempts` (con 2
+  fallos) se va con ella, no queda en Redis ni el indice ni ninguna sesion, y el
+  carrito de la cuenta queda vacio. La segunda sesion, abierta desde otro
+  navegador, tambien se cierra y su cookie se borra. Entrar con esa cuenta: 401.
+- El correo queda libre: se vuelve a registrar, con el carrito vacio.
 
 ## [3.0.0] - 2026-11-09
 
@@ -1355,7 +1412,8 @@ aplicacion y no como un cambio de plataforma.
 - El nombre del bucket del estado esta escrito a fuego en `backend.tf`. En otra
   computadora hay que cambiarlo a mano; se arregla en la 1.1.0.
 
-[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v3.0.0...HEAD
+[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/branToRep/microservices-demo/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/branToRep/microservices-demo/compare/v2.14.0...v3.0.0
 [2.14.0]: https://github.com/branToRep/microservices-demo/compare/v2.13.1...v2.14.0
 [2.13.1]: https://github.com/branToRep/microservices-demo/compare/v2.13.0...v2.13.1

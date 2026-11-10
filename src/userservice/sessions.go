@@ -172,3 +172,15 @@ func (s *servidor) revocarOtrasSesiones(ctx context.Context, idUsuario, conserva
 	}
 	return nil
 }
+
+// revocarTodasLasSesiones cierra todas las sesiones de un usuario, incluida la
+// de quien lo pide, y borra el indice. La usa DeleteUser: una cuenta borrada no
+// debe dejar ningun token que siga traduciendose a su id.
+func (s *servidor) revocarTodasLasSesiones(ctx context.Context, idUsuario string) error {
+	// Ningun token real es la cadena vacia, asi que no se conserva ninguno.
+	if err := s.revocarOtrasSesiones(ctx, idUsuario, ""); err != nil {
+		return err
+	}
+	_, err := s.redis.do("DEL", claveConjunto(idUsuario))
+	return err
+}

@@ -53,12 +53,13 @@ var (
 	// puede dejar la tienda entera esperando.
 	userSvcTimeout = duracionEnv("USER_SERVICE_TIMEOUT", 3*time.Second)
 
-	// Lo mismo para entrar, registrarse y cambiar la contrasena, que hacen
-	// bcrypt, LENTO A PROPOSITO (es lo que encarece un ataque por fuerza
-	// bruta). Cambiar la contrasena hace dos. Medido en el cluster con el
-	// limite de CPU de antes (200m): una operacion, entre 0,5 y 1 s; cambiar la
-	// contrasena, 3,1 s, por encima de los 3 s del limite general. Por eso van
-	// con su propio limite, mas holgado, y no con el de cada pagina.
+	// Lo mismo para entrar, registrarse, cambiar la contrasena y eliminar la
+	// cuenta, que hacen bcrypt, LENTO A PROPOSITO (es lo que encarece un
+	// ataque por fuerza bruta). Cambiar la contrasena hace dos. Medido en el
+	// cluster con el limite de CPU de antes (200m): una operacion, entre 0,5 y
+	// 1 s; cambiar la contrasena, 3,1 s, por encima de los 3 s del limite
+	// general. Por eso van con su propio limite, mas holgado, y no con el de
+	// cada pagina.
 	userSvcTimeoutClaves = duracionEnv("USER_SERVICE_TIMEOUT_CLAVES", 10*time.Second)
 )
 
@@ -133,6 +134,15 @@ func (u *usuarioClient) changePassword(ctx context.Context, userID, actual, nuev
 	_, err := u.c.ChangePassword(ctx, &pb.ChangePasswordRequest{
 		UserId: userID, CurrentPassword: actual, NewPassword: nueva, KeepSessionToken: conservar,
 	})
+	return err
+}
+
+// deleteUser borra la cuenta. Usa el plazo largo porque el servicio comprueba
+// la contrasena con bcrypt antes de borrar nada.
+func (u *usuarioClient) deleteUser(ctx context.Context, userID, contrasena string) error {
+	ctx, cancel := context.WithTimeout(ctx, userSvcTimeoutClaves)
+	defer cancel()
+	_, err := u.c.DeleteUser(ctx, &pb.DeleteUserRequest{UserId: userID, Password: contrasena})
 	return err
 }
 

@@ -235,6 +235,35 @@ header .navbar.sub-navbar .controls a img {
   margin-bottom: 3px;
 }
 
+/* Entrar y Salir. Son texto entre iconos, y Salir ademas es un formulario
+   (cerrar sesion es un POST con CSRF): sin esto el formulario se estira a los
+   60px de la barra pero su boton se queda arriba. Los selectores llevan
+   .navbar.sub-navbar para ganarle a "header .navbar.sub-navbar a", que pinta
+   de gris claro todos los enlaces de la barra. */
+header .header-salir {
+  display: flex;
+  align-items: center;
+  margin: 0 0 0 25px;
+}
+
+header .navbar.sub-navbar .header-texto {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1;
+  color: #111111;
+}
+
+header .navbar.sub-navbar .header-texto:hover,
+header .navbar.sub-navbar .header-texto:focus {
+  color: #CE0631;
+  text-decoration: none;
+  outline: none;
+}
+
 /* Footer */
 
 footer.py-5 {
@@ -485,6 +514,44 @@ similar to that of the hot-products-row.
   margin-top: 16px;
 }
 
+/* Guardar en una lista de deseos. Reutiliza el desplegable de la cantidad,
+   pero ese mide 100px, justo para un numero: un nombre de lista se cortaba
+   ("+ New wi") y la flecha se le montaba encima. Aqui el desplegable y el
+   campo del nombre miden lo mismo, y el boton cae a su lado o debajo segun
+   haya o no campo de nombre (flex-wrap). */
+.product-wishlist-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  max-width: 420px;
+  margin-top: 32px;
+}
+
+.product-wishlist-form label {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 14px;
+  color: #605f64;
+}
+
+.product-wishlist-dropdown {
+  width: 240px;
+}
+
+.product-wishlist-dropdown select {
+  padding-right: 44px; /* sitio para la flecha, que va a 25px del borde */
+  text-overflow: ellipsis;
+}
+
+.product-wishlist-name {
+  width: 240px;
+  height: 45px;
+  border: 1px solid #acacac;
+  border-radius: 8px;
+  padding: 10px 16px;
+}
+
 /* Platform Banner */
 
 .local,
@@ -674,4 +741,10 @@ the rules below could be extracted.
   right: 25px;
   width: 10px;
   height: 5px;
+}
+
+/* Titulo de la seccion que borra la cuenta: el rojo de la marca, para que no
+   se confunda con las de arriba. */
+.account-peligro {
+  color: #CE0631;
 }

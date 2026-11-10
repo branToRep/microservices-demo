@@ -117,6 +117,32 @@
                     </div>
                     <button type="submit" class="cymbal-button-primary">Cambiar la contraseña</button>
                 </form>
+
+                {{/* Eliminar la cuenta (v3.1.0). La contrasena la comprueba el
+                     userservice; la casilla, el frontend, porque "required" solo
+                     lo aplica el navegador. */}}
+                <h4 class="mt-5 account-peligro">Eliminar la cuenta</h4>
+                <p class="text-muted">
+                    Se borran para siempre tu perfil, tu dirección y tu carrito, y se cierran
+                    todas tus sesiones. Las listas de deseos no se borran: son de este navegador,
+                    no de la cuenta. No se puede deshacer.
+                </p>
+                {{ with $.del_error }}
+                <div class="alert alert-danger" role="alert">{{ . }}</div>
+                {{ end }}
+                <form method="POST" action="{{ $.baseUrl }}/account/delete">
+                    <input type="hidden" name="csrf_token" value="{{ $.csrf_token }}">
+                    <div class="form-group">
+                        <label for="delete_password">Tu contraseña</label>
+                        <input type="password" id="delete_password" name="password" class="form-control"
+                               required autocomplete="current-password">
+                    </div>
+                    <div class="form-group form-check">
+                        <input type="checkbox" id="delete_confirm" name="confirmar" value="si" class="form-check-input" required>
+                        <label for="delete_confirm" class="form-check-label">Entiendo que no se puede deshacer.</label>
+                    </div>
+                    <button type="submit" class="cymbal-button-secondary">Eliminar la cuenta</button>
+                </form>
             </div>
         </div>
     </section>
