@@ -69,7 +69,7 @@ func (fe *frontendServer) homeHandler(w http.ResponseWriter, r *http.Request) {
 		renderHTTPError(log, r, w, errors.Wrap(err, "could not retrieve products"), http.StatusInternalServerError)
 		return
 	}
-	cart, err := fe.getCart(r.Context(), sessionID(r))
+	cart, err := fe.getCart(r.Context(), cartID(r))
 	if err != nil {
 		renderHTTPError(log, r, w, errors.Wrap(err, "could not retrieve cart"), http.StatusInternalServerError)
 		return
@@ -162,7 +162,7 @@ func (fe *frontendServer) productHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	cart, err := fe.getCart(r.Context(), sessionID(r))
+	cart, err := fe.getCart(r.Context(), cartID(r))
 	if err != nil {
 		renderHTTPError(log, r, w, errors.Wrap(err, "could not retrieve cart"), http.StatusInternalServerError)
 		return
@@ -228,7 +228,7 @@ func (fe *frontendServer) addToCartHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if err := fe.insertCart(r.Context(), sessionID(r), p.GetId(), int32(payload.Quantity)); err != nil {
+	if err := fe.insertCart(r.Context(), cartID(r), p.GetId(), int32(payload.Quantity)); err != nil {
 		renderHTTPError(log, r, w, errors.Wrap(err, "failed to add to cart"), http.StatusInternalServerError)
 		return
 	}
@@ -240,7 +240,7 @@ func (fe *frontendServer) emptyCartHandler(w http.ResponseWriter, r *http.Reques
 	log := r.Context().Value(ctxKeyLog{}).(logrus.FieldLogger)
 	log.Debug("emptying cart")
 
-	if err := fe.emptyCart(r.Context(), sessionID(r)); err != nil {
+	if err := fe.emptyCart(r.Context(), cartID(r)); err != nil {
 		renderHTTPError(log, r, w, errors.Wrap(err, "failed to empty cart"), http.StatusInternalServerError)
 		return
 	}
@@ -256,7 +256,7 @@ func (fe *frontendServer) viewCartHandler(w http.ResponseWriter, r *http.Request
 		renderHTTPError(log, r, w, errors.Wrap(err, "could not retrieve currencies"), http.StatusInternalServerError)
 		return
 	}
-	cart, err := fe.getCart(r.Context(), sessionID(r))
+	cart, err := fe.getCart(r.Context(), cartID(r))
 	if err != nil {
 		renderHTTPError(log, r, w, errors.Wrap(err, "could not retrieve cart"), http.StatusInternalServerError)
 		return
@@ -359,7 +359,7 @@ func (fe *frontendServer) placeOrderHandler(w http.ResponseWriter, r *http.Reque
 				CreditCardExpirationMonth: int32(payload.CcMonth),
 				CreditCardExpirationYear:  int32(payload.CcYear),
 				CreditCardCvv:             int32(payload.CcCVV)},
-			UserId:       sessionID(r),
+			UserId:       cartID(r),
 			UserCurrency: currentCurrency(r),
 			Address: &pb.Address{
 				StreetAddress: payload.StreetAddress,
@@ -418,8 +418,14 @@ func (fe *frontendServer) assistantHandler(w http.ResponseWriter, r *http.Reques
 func (fe *frontendServer) logoutHandler(w http.ResponseWriter, r *http.Request) {
 	log := r.Context().Value(ctxKeyLog{}).(logrus.FieldLogger)
 	log.Debug("logging out")
-	// Este /logout es el de Google: borra las cookies del navegador. Cerrar
-	// tambien la sesion en el servidor llega en la v3.0.0, con el userservice.
+	// El /logout de siempre borra todas las cookies del navegador. Ahora
+	// ademas cierra la sesion en el servidor: si solo se borrara la cookie, el
+	// token seguiria siendo valido en Redis hasta caducar.
+	if token := authToken(r); token != "" && userSvc != nil {
+		if err := userSvc.logout(r.Context(), token); err != nil {
+			log.WithField("err", err).Warn("no se pudo cerrar la sesion en el servidor")
+		}
+	}
 	for _, c := range r.Cookies() {
 		c.Expires = time.Now().Add(-time.Hour * 24 * 365)
 		c.MaxAge = -1
@@ -560,6 +566,8 @@ func injectCommonTemplateData(r *http.Request, payload map[string]interface{}) m
 		"wishlists":         wishlists,
 		"wishlist_size":     wishlistSize,
 		"session_id":        sessionID(r),
+		"user":              currentUser(r),
+		"csrf_token":        csrfFromRequest(r),
 		"request_id":        r.Context().Value(ctxKeyRequestID{}),
 		"user_currency":     currentCurrency(r),
 		"platform_css":      plat.css,

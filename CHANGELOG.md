@@ -8,20 +8,18 @@ La convencion concreta de este repositorio esta en [`docs/VERSIONADO.md`](docs/V
 
 ## [Sin publicar]
 
-La Fase III esta cerrada en la 2.12.2: Vault como unica fuente del secreto de
-Redis, configurada con Ansible, leida por el propio cluster y probada contra
-fallos (`docs/PORTAFOLIO-FASE-III.md`). Lo que queda es producto, sin numero
-de version asignado: se numera al empezarlo, segun `docs/VERSIONADO.md`.
-
-### Pendiente
-- (#65) El inicio de sesion. Restaura ademas el cableado que quito la 1.5.1
-  (ADR 0017), asi que sera el diff mas grande del proyecto. Ojo con el ADR: dice
-  que `git revert` de su commit devuelve el cableado, y no es asi. Ese commit
-  (`c529f29e`) tambien anadio los protos generados de wishlist, el script que
-  los genera y dos ADR, y el squash los fundio en uno. Sirve como mapa
-  (`git show c529f29e -- src/frontend/`), no para revertirlo.
+La Fase III esta cerrada en la 2.12.2 (`docs/PORTAFOLIO-FASE-III.md`), y el
+plan de producto en la 3.0.0: la tienda tiene cuentas. Lo que queda son
+mejoras, sin numero de version asignado: se numera al empezarlas, segun
+`docs/VERSIONADO.md`.
 
 ### Mejoras posibles, no bloqueantes
+- TLS en el balanceador, y entonces `COOKIE_SEGURA=1`. Mientras no lo haya, el
+  token de sesion y la contrasena viajan sin cifrar (ADR 0024).
+- CSRF tambien en los POST que ya existian (carrito, listas, compra). Hoy los
+  protege el `SameSite=Lax` de la cookie de sesion: un ataque desde otro sitio
+  actua como anonimo y no toca ninguna cuenta.
+- Listas de deseos por cuenta, con su propia regla de fusion al entrar.
 - Construir tambien las diez imagenes de Google, para no depender de su registro.
   Hoy usamos las oficiales fijadas a `v0.10.6`; anadirlas a la matriz del
   workflow es una linea. No se hace porque no hemos tocado ese codigo.
@@ -49,6 +47,81 @@ de version asignado: se numera al empezarlo, segun `docs/VERSIONADO.md`.
 - El CI fija Helm 3.16.3, y una version local mas nueva ya avisa de que
   `--atomic` esta obsoleto (en su lugar, `--rollback-on-failure`). Sigue
   funcionando; conviene fijar la misma version en la maquina del operador.
+
+## [3.0.0] - 2026-11-09
+
+**La tienda tiene cuentas.** Registrarse, entrar, ver y editar la cuenta,
+cambiar la contrasena y salir, contra el `userservice` que desplego la 2.14.0.
+El carrito pasa a ser de la cuenta, y lo que habia en el anonimo se suma al
+entrar.
+
+MAYOR: la misma URL ahora permite registrarse e iniciar sesion.
+
+### Anadido
+- `src/frontend/auth.go` — el cliente del `userservice`, la cookie de sesion
+  (`HttpOnly`, `SameSite=Lax`, `Secure` configurable), el CSRF de cookie doble y
+  el middleware `withUser`.
+- `src/frontend/cuentas.go` — las ocho rutas: `/login` y `/register` (GET y
+  POST), `/account` (GET y POST), `/account/password` y `/account/logout`. Todo
+  POST de cuentas exige el token CSRF.
+- `src/frontend/merge.go` — al entrar, el carrito anonimo se suma al de la
+  cuenta y se vacia. Si algo falla, el anonimo se conserva: un producto repetido
+  es mejor que uno perdido.
+- Las plantillas `login`, `register` y `account`, y en el encabezado *Entrar*,
+  *Mi cuenta* y *Salir*.
+- Los stubs gRPC del `userservice` en el frontend, generados con el script de
+  siempre (ADR 0016).
+- `docs/adr/0024` — la sesion en el frontend, y lo que **no** protege: sin TLS,
+  el token viaja sin cifrar.
+
+### Cambiado
+- El carrito usa `cartID(r)`: la cuenta si hay sesion, la sesion anonima si no.
+  Son las nueve llamadas que tocan el carrito; las listas de deseos siguen por
+  navegador y no se fusionan.
+- `/logout` cierra tambien la sesion en el servidor, no solo la cookie.
+- Un `userservice` lento o caido ya no lleva a la pagina de error: la persona
+  ve su formulario con un aviso y un 503. Entrar, registrarse y cambiar la
+  contrasena esperan hasta `USER_SERVICE_TIMEOUT_CLAVES` (10 s), porque hacen
+  bcrypt; el resto, `USER_SERVICE_TIMEOUT` (3 s).
+- El chart pasa `USER_SERVICE_ADDR` y `COOKIE_SEGURA` ("0" mientras no haya TLS)
+  al frontend, y el `userservice` sube su limite de CPU de 200m a 500m (ver el
+  resultado medido). Chart 2.1.0, `appVersion` 3.0.0.
+- `docs/adr/0017` — corregido: el `git revert` que proponia no sirve, porque el
+  squash fundio en ese commit el cableado con los protos generados y dos ADR.
+
+### Resultado medido
+- Los stubs del frontend salen byte a byte identicos a los del `userservice`,
+  generados en momentos distintos: las versiones fijadas del script funcionan.
+  `gofmt` limpio, y el frontend compila a la primera.
+- **29 de 29** en una prueba de punta a punta: el frontend de la rama en local,
+  contra los servicios reales del cluster por `port-forward`, recorriendo el
+  flujo como un navegador. Sin token CSRF, o con uno falso: 403. La cookie es
+  `HttpOnly` y `SameSite=Lax`, sin `Secure`. La fusion pasa las 2 unidades a la
+  cuenta y deja el anonimo vacio. Cambiar solo el nombre no borra la direccion.
+  Cambiar la contrasena mantiene abierta la sesion desde la que se cambia.
+  Correo repetido: 409. La contrasena vieja ya no entra; la nueva si, y el
+  carrito de la cuenta sigue ahi. El `/logout` de siempre tambien cierra la
+  sesion.
+- bcrypt con el limite de CPU de antes y con el nuevo, mismas peticiones:
+
+  | Peticion | Con 200m | Con 500m |
+  |---|---|---|
+  | Cambiar la contrasena (2 operaciones bcrypt) | 3,12 s | 0,33 s |
+  | Registrarse | 2,40 s | 0,30 s |
+  | Entrar | 1,62 s | 0,20 s |
+
+  Diez veces mas rapido con dos veces y media de limite. Linux no ralentiza un
+  contenedor que agota su cuota de CPU: lo congela hasta la siguiente ventana
+  de 100 ms. Y bcrypt es justo una rafaga de calculo.
+
+### Lo que encontro ponerlo en marcha
+| Que | Donde aparecio | Que se hizo |
+|---|---|---|
+| Con 200m de CPU, cambiar la contrasena tardaba mas que los 3 s que esperaba el frontend | La prueba de punta a punta, en cuanto anoto tiempos | CPU del `userservice` a 500m, y un limite propio de 10 s para las operaciones con contrasena |
+| Un servicio lento mandaba a la pagina de error con el detalle tecnico | El mismo fallo | El formulario vuelve con un aviso y un 503 |
+| `UpdateProfile` reemplaza todos los campos: un formulario solo con el nombre habria borrado la direccion | Leyendo el servicio antes de escribir la pagina | El formulario de cuenta lleva y reenvia siempre todo, precargado |
+| Docker Desktop cambia el contexto de `kubectl` a su Kubernetes local al arrancar | La guarda de la prueba se nego a seguir | Volver a apuntar con `aws eks update-kubeconfig` |
+| El ADR 0017 proponia un `git revert` que borraria piezas ajenas | Al leer el commit antes de usarlo | Usado como mapa; ADR corregido |
 
 ## [2.14.0] - 2026-11-09
 
@@ -1282,7 +1355,8 @@ aplicacion y no como un cambio de plataforma.
 - El nombre del bucket del estado esta escrito a fuego en `backend.tf`. En otra
   computadora hay que cambiarlo a mano; se arregla en la 1.1.0.
 
-[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v2.14.0...HEAD
+[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/branToRep/microservices-demo/compare/v2.14.0...v3.0.0
 [2.14.0]: https://github.com/branToRep/microservices-demo/compare/v2.13.1...v2.14.0
 [2.13.1]: https://github.com/branToRep/microservices-demo/compare/v2.13.0...v2.13.1
 [2.13.0]: https://github.com/branToRep/microservices-demo/compare/v2.12.2...v2.13.0

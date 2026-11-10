@@ -163,7 +163,7 @@ func (fe *frontendServer) viewWishlistsHandler(w http.ResponseWriter, r *http.Re
 		renderHTTPError(log, r, w, errors.Wrap(err, "could not retrieve currencies"), http.StatusInternalServerError)
 		return
 	}
-	cart, err := fe.getCart(r.Context(), sessionID(r))
+	cart, err := fe.getCart(r.Context(), cartID(r))
 	if err != nil {
 		renderHTTPError(log, r, w, errors.Wrap(err, "could not retrieve cart"), http.StatusInternalServerError)
 		return
@@ -193,7 +193,7 @@ func (fe *frontendServer) viewWishlistHandler(w http.ResponseWriter, r *http.Req
 		renderHTTPError(log, r, w, errors.Wrap(err, "could not retrieve currencies"), http.StatusInternalServerError)
 		return
 	}
-	cart, err := fe.getCart(r.Context(), sessionID(r))
+	cart, err := fe.getCart(r.Context(), cartID(r))
 	if err != nil {
 		renderHTTPError(log, r, w, errors.Wrap(err, "could not retrieve cart"), http.StatusInternalServerError)
 		return
@@ -367,7 +367,7 @@ func (fe *frontendServer) moveToCartHandler(w http.ResponseWriter, r *http.Reque
 		renderHTTPError(log, r, w, errors.New("product id not specified"), http.StatusBadRequest)
 		return
 	}
-	if err := fe.insertCart(r.Context(), sessionID(r), productID, 1); err != nil {
+	if err := fe.insertCart(r.Context(), cartID(r), productID, 1); err != nil {
 		renderHTTPError(log, r, w, errors.Wrap(err, "failed to add to cart"), http.StatusInternalServerError)
 		return
 	}
