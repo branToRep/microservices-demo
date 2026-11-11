@@ -175,13 +175,19 @@ func authToken(r *http.Request) string {
 }
 
 // cartID es la llave del carrito: la cuenta si hay sesion, la sesion anonima si
-// no. Las listas de deseos NO la usan: siguen en sessionID(r), por navegador,
-// porque no se fusionan al entrar (ADR 0024).
+// no.
 func cartID(r *http.Request) string {
 	if u := currentUser(r); u != nil {
 		return u.ID
 	}
 	return sessionID(r)
+}
+
+// wishlistID es la llave de las listas de deseos, con la misma regla que el
+// carrito. Hasta la 3.1.0 eran por navegador (sessionID), y dos cuentas que
+// entraban desde el mismo navegador veian y tocaban las mismas listas.
+func wishlistID(r *http.Request) string {
+	return cartID(r)
 }
 
 // ------------------------------------------------------- las cookies

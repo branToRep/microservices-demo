@@ -34,9 +34,11 @@ El balanceador de `infra/aws/envs/dev` no tiene certificado.
 3. **El carrito pasa a ser de la cuenta.** `cartID(r)` devuelve la cuenta si hay
    sesion y la sesion anonima si no, y es la llave del carrito en las nueve
    llamadas que lo usan. Al entrar, lo que habia en el carrito anonimo se suma
-   al de la cuenta y el anonimo se vacia. Las listas de deseos **no** cambian:
-   siguen por navegador (`sessionID(r)`) y no se fusionan, porque fusionar
-   listas con nombre abre preguntas que el ticket no pide.
+   al de la cuenta y el anonimo se vacia. Las listas de deseos **no** cambiaron
+   en la 3.0.0: siguieron por navegador (`sessionID(r)`). **Corregido en la
+   3.1.1:** dos cuentas que entraban desde el mismo navegador veian las mismas
+   listas. Ahora usan `wishlistID(r)`, con la regla del carrito, y al entrar
+   las listas anonimas pasan a la cuenta (una con el mismo nombre se junta).
 4. **Salir cierra la sesion en el servidor** antes de borrar la cookie, tambien
    en el `/logout` que ya traia la tienda. Borrar solo la cookie dejaria el
    token valido en Redis hasta que caducara.

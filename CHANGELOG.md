@@ -19,7 +19,6 @@ numera al empezarlas, segun `docs/VERSIONADO.md`.
 - CSRF tambien en los POST que ya existian (carrito, listas, compra). Hoy los
   protege el `SameSite=Lax` de la cookie de sesion: un ataque desde otro sitio
   actua como anonimo y no toca ninguna cuenta.
-- Listas de deseos por cuenta, con su propia regla de fusion al entrar.
 - Contar para el bloqueo las contrasenas malas de `ChangePassword` y
   `DeleteUser`, no solo las del inicio de sesion. Las dos piden una sesion
   abierta, pero con una sesion robada hoy se pueden probar sin limite (ADR 0025).
@@ -53,6 +52,25 @@ numera al empezarlas, segun `docs/VERSIONADO.md`.
 - El CI fija Helm 3.16.3, y una version local mas nueva ya avisa de que
   `--atomic` esta obsoleto (en su lugar, `--rollback-on-failure`). Sigue
   funcionando; conviene fijar la misma version en la maquina del operador.
+
+## [3.1.1] - 2026-11-10
+
+**Las listas de deseos son de la cuenta.** Hasta la 3.1.0 eran del navegador:
+dos cuentas que entraban desde el mismo navegador veian y tocaban las mismas
+listas, y quien entraba despues veia lo que habia guardado el anterior.
+
+PARCHE: se corrige algo que ya estaba; no aparece ninguna capacidad nueva.
+
+### Corregido
+- Las listas usan `wishlistID(r)`, la misma regla que el carrito: la cuenta si
+  hay sesion, el navegador si no. Son las doce llamadas de `wishlist.go`.
+- Al entrar o registrarse, las listas que el navegador hizo sin sesion pasan a
+  la cuenta. Una con el mismo nombre que una de la cuenta se junta con ella, y
+  la anonima solo se borra si todos sus productos llegaron (`fusionarListas`).
+- Eliminar la cuenta borra tambien sus listas, y la pagina ya no dice que se
+  conservan.
+- `docs/adr/0024` y `docs/adr/0025`, corregidos donde describian las listas
+  por navegador.
 
 ## [3.1.0] - 2026-11-09
 
@@ -1412,7 +1430,8 @@ aplicacion y no como un cambio de plataforma.
 - El nombre del bucket del estado esta escrito a fuego en `backend.tf`. En otra
   computadora hay que cambiarlo a mano; se arregla en la 1.1.0.
 
-[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v3.1.0...HEAD
+[Sin publicar]: https://github.com/branToRep/microservices-demo/compare/v3.1.1...HEAD
+[3.1.1]: https://github.com/branToRep/microservices-demo/compare/v3.1.0...v3.1.1
 [3.1.0]: https://github.com/branToRep/microservices-demo/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/branToRep/microservices-demo/compare/v2.14.0...v3.0.0
 [2.14.0]: https://github.com/branToRep/microservices-demo/compare/v2.13.1...v2.14.0
