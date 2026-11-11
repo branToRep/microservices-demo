@@ -112,10 +112,12 @@ func sesionHuerfana(w http.ResponseWriter, r *http.Request, log logrus.FieldLogg
 	redirigir(w, "/login")
 }
 
-// abrirSesion pone la cookie, fusiona el carrito anonimo y lleva a la portada.
+// abrirSesion pone la cookie, fusiona el carrito y las listas anonimas y lleva a
+// la portada.
 func (fe *frontendServer) abrirSesion(w http.ResponseWriter, r *http.Request, log logrus.FieldLogger, s *pb.Session) {
 	ponerCookieSesion(w, s)
 	fe.fusionarCarrito(r.Context(), log, sessionID(r), s.GetUserId())
+	fe.fusionarListas(r.Context(), log, sessionID(r), s.GetUserId())
 	redirigir(w, "/")
 }
 
@@ -359,10 +361,9 @@ func (fe *frontendServer) logoutAccountHandler(w http.ResponseWriter, r *http.Re
 // comprueba aqui aunque el formulario la marque como obligatoria (el atributo
 // required lo aplica el navegador, y una peticion hecha a mano no lo trae).
 //
-// Despues de borrar vacia el carrito de la cuenta, que vive en redis-cart con
-// el id como llave y nadie volveria a pedir. Si eso falla la cuenta YA se
-// borro, asi que solo queda registrado. Las listas de deseos no se tocan: son
-// del navegador, no de la cuenta (ADR 0024).
+// Despues de borrar vacia el carrito y borra las listas de deseos de la cuenta,
+// que viven con el id como llave y nadie volveria a pedir. Si eso falla la
+// cuenta YA se borro, asi que solo queda registrado.
 func (fe *frontendServer) deleteAccountHandler(w http.ResponseWriter, r *http.Request) {
 	log := r.Context().Value(ctxKeyLog{}).(logrus.FieldLogger)
 	u := currentUser(r)
@@ -398,6 +399,7 @@ func (fe *frontendServer) deleteAccountHandler(w http.ResponseWriter, r *http.Re
 	if err := fe.emptyCart(r.Context(), u.ID); err != nil {
 		log.WithField("err", err).Warn("cuenta eliminada, pero no se pudo vaciar su carrito")
 	}
+	fe.borrarListas(r.Context(), log, u.ID)
 	borrarCookieSesion(w)
 	redirigir(w, "/login?ok=eliminada")
 }

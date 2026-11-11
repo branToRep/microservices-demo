@@ -51,8 +51,8 @@ Una cuenta deja rastro en cuatro sitios, y no comparten transaccion:
   apunta a nada. Exige la contrasena correcta en ese mismo instante, y ese
   token no sirve para nada: la decision 6 lo cierra en cuanto se usa. Cerrarlo
   del todo pediria que `ValidateSession` consultara Postgres en cada peticion.
-- **Las listas de deseos no se borran.** Son del navegador, no de la cuenta
-  (ADR 0024), y caducan solas a las 48 h. La pagina lo dice.
+- **Las listas de deseos** no se borraban en la 3.1.0, porque eran del
+  navegador. Desde la 3.1.1 son de la cuenta y se borran con ella.
 - **Una contrasena mala al borrar no cuenta para el bloqueo**, igual que al
   cambiarla. Las dos piden una sesion abierta y cuestan un bcrypt por intento,
   pero quien tenga una sesion robada puede probar contrasenas sin limite. Queda

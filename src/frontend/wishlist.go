@@ -113,7 +113,7 @@ func wishlistContext(r *http.Request) ([]*pb.Wishlist, int) {
 	if wishlistSvc == nil {
 		return nil, 0
 	}
-	userID := sessionID(r)
+	userID := wishlistID(r)
 	if userID == "" {
 		return nil, 0
 	}
@@ -153,7 +153,7 @@ func (fe *frontendServer) viewWishlistsHandler(w http.ResponseWriter, r *http.Re
 	log := r.Context().Value(ctxKeyLog{}).(logrus.FieldLogger)
 	log.Debug("viewing wishlists")
 
-	lists, err := wishlistSvc.lists(r.Context(), sessionID(r))
+	lists, err := wishlistSvc.lists(r.Context(), wishlistID(r))
 	if err != nil {
 		renderHTTPError(log, r, w, errors.Wrap(err, "could not retrieve wishlists"), wishlistHTTPStatus(err))
 		return
@@ -183,7 +183,7 @@ func (fe *frontendServer) viewWishlistHandler(w http.ResponseWriter, r *http.Req
 	log := r.Context().Value(ctxKeyLog{}).(logrus.FieldLogger)
 	id := mux.Vars(r)["id"]
 
-	list, err := wishlistSvc.get(r.Context(), sessionID(r), id)
+	list, err := wishlistSvc.get(r.Context(), wishlistID(r), id)
 	if err != nil {
 		renderHTTPError(log, r, w, errors.Wrap(err, "could not retrieve wishlist"), wishlistHTTPStatus(err))
 		return
@@ -232,7 +232,7 @@ func (fe *frontendServer) createWishlistHandler(w http.ResponseWriter, r *http.R
 	if name == "" {
 		name = "My Wishlist"
 	}
-	list, err := wishlistSvc.create(r.Context(), sessionID(r), name)
+	list, err := wishlistSvc.create(r.Context(), wishlistID(r), name)
 	if err != nil {
 		renderHTTPError(log, r, w, errors.Wrap(err, "failed to create wishlist"), wishlistHTTPStatus(err))
 		return
@@ -249,7 +249,7 @@ func (fe *frontendServer) renameWishlistHandler(w http.ResponseWriter, r *http.R
 		renderHTTPError(log, r, w, errors.New("wishlist name is required"), http.StatusUnprocessableEntity)
 		return
 	}
-	if err := wishlistSvc.rename(r.Context(), sessionID(r), id, name); err != nil {
+	if err := wishlistSvc.rename(r.Context(), wishlistID(r), id, name); err != nil {
 		renderHTTPError(log, r, w, errors.Wrap(err, "failed to rename wishlist"), wishlistHTTPStatus(err))
 		return
 	}
@@ -259,7 +259,7 @@ func (fe *frontendServer) renameWishlistHandler(w http.ResponseWriter, r *http.R
 func (fe *frontendServer) deleteWishlistHandler(w http.ResponseWriter, r *http.Request) {
 	log := r.Context().Value(ctxKeyLog{}).(logrus.FieldLogger)
 	id := mux.Vars(r)["id"]
-	if err := wishlistSvc.remove(r.Context(), sessionID(r), id); err != nil {
+	if err := wishlistSvc.remove(r.Context(), wishlistID(r), id); err != nil {
 		renderHTTPError(log, r, w, errors.Wrap(err, "failed to delete wishlist"), wishlistHTTPStatus(err))
 		return
 	}
@@ -287,7 +287,7 @@ func (fe *frontendServer) addToWishlistHandler(w http.ResponseWriter, r *http.Re
 		if name == "" {
 			name = "My Wishlist"
 		}
-		list, err := wishlistSvc.create(r.Context(), sessionID(r), name)
+		list, err := wishlistSvc.create(r.Context(), wishlistID(r), name)
 		if err != nil {
 			renderHTTPError(log, r, w, errors.Wrap(err, "failed to create wishlist"), wishlistHTTPStatus(err))
 			return
@@ -295,7 +295,7 @@ func (fe *frontendServer) addToWishlistHandler(w http.ResponseWriter, r *http.Re
 		listID = list.GetId()
 	}
 
-	if err := wishlistSvc.addItem(r.Context(), sessionID(r), listID, productID); err != nil {
+	if err := wishlistSvc.addItem(r.Context(), wishlistID(r), listID, productID); err != nil {
 		renderHTTPError(log, r, w, errors.Wrap(err, "failed to add product to wishlist"), wishlistHTTPStatus(err))
 		return
 	}
@@ -307,7 +307,7 @@ func (fe *frontendServer) removeFromWishlistHandler(w http.ResponseWriter, r *ht
 	log := r.Context().Value(ctxKeyLog{}).(logrus.FieldLogger)
 	id := mux.Vars(r)["id"]
 	productID := strings.TrimSpace(r.FormValue("product_id"))
-	if err := wishlistSvc.removeItem(r.Context(), sessionID(r), id, productID); err != nil {
+	if err := wishlistSvc.removeItem(r.Context(), wishlistID(r), id, productID); err != nil {
 		renderHTTPError(log, r, w, errors.Wrap(err, "failed to remove product from wishlist"), wishlistHTTPStatus(err))
 		return
 	}
@@ -346,11 +346,11 @@ func (fe *frontendServer) moveBetweenListsHandler(w http.ResponseWriter, r *http
 	// Primero agregar, despues quitar. Es el mismo orden que en «mover al
 	// carrito» y por la misma razon: si algo falla en medio, el producto queda
 	// en las dos listas —molesto— y nunca se pierde.
-	if err := wishlistSvc.addItem(r.Context(), sessionID(r), destino, productID); err != nil {
+	if err := wishlistSvc.addItem(r.Context(), wishlistID(r), destino, productID); err != nil {
 		renderHTTPError(log, r, w, errors.Wrap(err, "failed to add product to the target wishlist"), wishlistHTTPStatus(err))
 		return
 	}
-	if err := wishlistSvc.removeItem(r.Context(), sessionID(r), origen, productID); err != nil {
+	if err := wishlistSvc.removeItem(r.Context(), wishlistID(r), origen, productID); err != nil {
 		// Ya esta en la lista destino, asi que esto no es fatal.
 		log.WithField("error", err).Warn("failed to remove product from the source wishlist after moving it")
 	}
@@ -371,7 +371,7 @@ func (fe *frontendServer) moveToCartHandler(w http.ResponseWriter, r *http.Reque
 		renderHTTPError(log, r, w, errors.Wrap(err, "failed to add to cart"), http.StatusInternalServerError)
 		return
 	}
-	if err := wishlistSvc.removeItem(r.Context(), sessionID(r), id, productID); err != nil {
+	if err := wishlistSvc.removeItem(r.Context(), wishlistID(r), id, productID); err != nil {
 		// El producto ya está en el carrito, así que esto no es fatal.
 		log.WithField("error", err).Warn("failed to remove product from wishlist after moving it to the cart")
 	}
